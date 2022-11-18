@@ -162,6 +162,16 @@ func (session *Session) respondToPing(logger logrus.FieldLogger, roomId mxid.Roo
 	}
 }
 
+func (session *Session) respondToPraise(logger logrus.FieldLogger, roomId mxid.RoomID, message string) {
+	message = strings.ToLower(message)
+	if strings.HasPrefix(message, "good bot") {
+		session.respondMessage(logger, roomId, ":)")
+	}
+	if strings.HasPrefix(message, "bad bot") {
+		session.respondMessage(logger, roomId, ":(")
+	}
+}
+
 func (session *Session) respondToTimezoneHints(logger logrus.FieldLogger, roomId mxid.RoomID, message string) {
 	type hint struct {
 		time  string
@@ -223,6 +233,7 @@ func (session *Session) respond(logger logrus.FieldLogger, roomId mxid.RoomID, m
 		}
 	}()
 	session.respondToPing(logger, roomId, message)
+	session.respondToPraise(logger, roomId, message)
 	session.respondToTimezoneHints(logger, roomId, message)
 }
 
