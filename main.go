@@ -297,6 +297,4 @@ func main() {
 	}
 
 	session.RunSyncLoop()
-
-	fmt.Println("Done")
 }
