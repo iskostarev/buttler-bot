@@ -126,8 +126,6 @@ func canonizeTime(strTime string) string {
 }
 
 func convertTimezone(strTime string, sourceTz, targetTz *time.Location, targetId string) string {
-	_, _, _ = sourceTz, targetTz, targetId
-
 	now := time.Now()
 	nowYear, nowMonth, nowDay := now.Year(), int(now.Month()), now.Day()
 
