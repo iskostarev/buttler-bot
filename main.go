@@ -24,6 +24,13 @@ func configureLogging(config *Config) {
 }
 
 func main() {
+	defer func() {
+		if r := recover(); r != nil {
+			logrus.Fatal(r)
+			os.Exit(1)
+		}
+	}()
+
 	config := ParseConfig()
 
 	configureLogging(&config)
