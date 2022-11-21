@@ -15,10 +15,19 @@ import (
 	mxid "maunium.net/go/mautrix/id"
 )
 
+type RequestedTimezoneHint struct {
+	RoomId mxid.RoomID
+	Time   string
+	TzId   string
+}
+
 type Session struct {
-	Client         *mautrix.Client
-	StartTimestamp int64
-	Timezones      []TimezoneInfo
+	Client               *mautrix.Client
+	StartTimestamp       int64
+	MessageCounter       int64
+	Timezones            []TimezoneInfo
+	LastTzRequests       map[RequestedTimezoneHint]int64
+	TimezoneHintCooldown int64
 }
 
 type TimezoneInfo struct {
@@ -64,16 +73,23 @@ func InitSession(config *Config) (session Session, err error) {
 		session.Timezones = append(session.Timezones, tzinfo)
 	}
 
+	session.LastTzRequests = make(map[RequestedTimezoneHint]int64)
+	session.TimezoneHintCooldown = config.TimezoneHintCooldown
+
 	return
 }
 
-func (session *Session) respondMessage(logger logrus.FieldLogger, roomId mxid.RoomID, message string) {
+func (session *Session) RespondMessage(logger logrus.FieldLogger, roomId mxid.RoomID, message string) bool {
 	if _, err := session.Client.SendText(roomId, message); err != nil {
 		logger.Errorf("Failed to respond: %s", err.Error())
+		return false
 	}
+	return true
 }
 
 func (session *Session) handleMessage(source mautrix.EventSource, evt *mxevent.Event) {
+	session.MessageCounter++
+
 	if evt.Sender == session.Client.UserID {
 		return
 	}
@@ -86,6 +102,7 @@ func (session *Session) handleMessage(source mautrix.EventSource, evt *mxevent.E
 		"event_id": evt.ID,
 		"room_id":  evt.RoomID,
 		"sender":   evt.Sender,
+		"msgno":    session.MessageCounter,
 	})
 
 	message := evt.Content.Raw["body"].(string)

@@ -23,6 +23,7 @@ type Config struct {
 		Timezone string
 		Regex    string
 	}
+	TimezoneHintCooldown int64
 }
 
 func ParseConfig() (result Config) {

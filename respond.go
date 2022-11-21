@@ -42,18 +42,33 @@ func convertTimezone(strTime string, sourceTz, targetTz *time.Location, targetId
 
 func (session *Session) respondToPing(logger logrus.FieldLogger, roomId mxid.RoomID, message string) {
 	if message == "!buttler ping" {
-		session.respondMessage(logger, roomId, "Pong!")
+		session.RespondMessage(logger, roomId, "Pong!")
 	}
 }
 
 func (session *Session) respondToPraise(logger logrus.FieldLogger, roomId mxid.RoomID, message string) {
 	message = strings.ToLower(message)
 	if strings.HasPrefix(message, "good bot") {
-		session.respondMessage(logger, roomId, ":)")
+		session.RespondMessage(logger, roomId, ":)")
 	}
 	if strings.HasPrefix(message, "bad bot") {
-		session.respondMessage(logger, roomId, ":(")
+		session.RespondMessage(logger, roomId, ":(")
 	}
+}
+
+func (session *Session) isTimezoneHintOnCooldown(roomId mxid.RoomID, time string, tzid string) bool {
+	key := RequestedTimezoneHint{RoomId: roomId, Time: time, TzId: tzid}
+	lastMsgNo, ok := session.LastTzRequests[key]
+	if !ok {
+		return false
+	}
+
+	return session.MessageCounter-lastMsgNo <= session.TimezoneHintCooldown
+}
+
+func (session *Session) updateTimezoneHintCooldown(roomId mxid.RoomID, time string, tzid string) {
+	key := RequestedTimezoneHint{RoomId: roomId, Time: time, TzId: tzid}
+	session.LastTzRequests[key] = session.MessageCounter
 }
 
 func (session *Session) respondToTimezoneHints(logger logrus.FieldLogger, roomId mxid.RoomID, message string) {
@@ -72,7 +87,11 @@ func (session *Session) respondToTimezoneHints(logger logrus.FieldLogger, roomId
 
 		for _, match := range matches {
 			time := canonizeTime(match[1])
-			requiredHints = append(requiredHints, hint{time, tzinfo.Id, tzinfo.Timezone})
+			if !session.isTimezoneHintOnCooldown(roomId, time, tzinfo.Id) {
+				requiredHints = append(requiredHints, hint{time, tzinfo.Id, tzinfo.Timezone})
+			} else {
+				logger.Debugf("Hint for %s %s still on cooldown", time, tzinfo.Id)
+			}
 		}
 	}
 
@@ -107,7 +126,11 @@ func (session *Session) respondToTimezoneHints(logger logrus.FieldLogger, roomId
 		response += line
 	}
 
-	session.respondMessage(logger, roomId, response)
+	if session.RespondMessage(logger, roomId, response) {
+		for _, curHint := range requiredHints {
+			session.updateTimezoneHintCooldown(roomId, curHint.time, curHint.tzid)
+		}
+	}
 }
 
 func (session *Session) Respond(logger logrus.FieldLogger, roomId mxid.RoomID, message string) {
