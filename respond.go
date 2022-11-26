@@ -11,6 +11,7 @@ import (
 )
 
 func canonizeTime(strTime string) string {
+	strTime = strings.ReplaceAll(strTime, ".", ":")
 	if !strings.Contains(strTime, ":") {
 		strTime += ":00"
 	}

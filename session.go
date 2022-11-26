@@ -37,7 +37,7 @@ type TimezoneInfo struct {
 }
 
 func buildTimezoneRegexp(innerRegex string) (result *regexp.Regexp, err error) {
-	finalRegex := fmt.Sprintf(`(?i)(\d\d?(?::\d\d)?)\s*(?:%s)`, innerRegex)
+	finalRegex := fmt.Sprintf(`(?i)(\d\d?(?:[:.]\d\d)?)\s*(?:%s)`, innerRegex)
 	result, err = regexp.Compile(finalRegex)
 	return
 }
