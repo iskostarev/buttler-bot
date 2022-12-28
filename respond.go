@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"html/template"
 	"strings"
 	"time"
 
@@ -102,32 +103,33 @@ func (session *Session) respondToTimezoneHints(logger logrus.FieldLogger, roomId
 
 	logger.Debugf("Required timezone hints: %v", requiredHints)
 
-	var response string
+	var responsePlain, responseHtml string
 
-	for _, curHint := range requiredHints {
-		if response != "" {
-			response += "\n"
+	for i, curHint := range requiredHints {
+		if i != 0 {
+			responsePlain += "\n"
+			responseHtml += "<br>"
 		}
 
-		line := fmt.Sprintf("%s %s: ", curHint.time, curHint.tzid)
-		first := true
-		for _, tzinfo := range session.Timezones {
+		for j, tzinfo := range session.Timezones {
+			if j != 0 {
+				responsePlain += " = "
+				responseHtml += " = "
+			}
+
+			var tztext string
 			if tzinfo.Id == curHint.tzid {
-				continue
+				tztext = fmt.Sprintf("%s %s", curHint.time, curHint.tzid)
+			} else {
+				tztext = convertTimezone(curHint.time, curHint.tzone, tzinfo.Timezone, tzinfo.Id)
 			}
 
-			if !first {
-				line += "; "
-			}
-
-			line += convertTimezone(curHint.time, curHint.tzone, tzinfo.Timezone, tzinfo.Id)
-
-			first = false
+			responsePlain += tztext
+			responseHtml += "<code>" + template.HTMLEscapeString(tztext) + "</code>"
 		}
-		response += line
 	}
 
-	if session.RespondMessage(logger, roomId, NewBasicTextMessage(response)) {
+	if session.RespondMessage(logger, roomId, NewHtmlTextMessage(responseHtml, responsePlain)) {
 		for _, curHint := range requiredHints {
 			session.updateTimezoneHintCooldown(roomId, curHint.time, curHint.tzid)
 		}
