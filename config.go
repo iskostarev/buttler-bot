@@ -22,6 +22,7 @@ type Config struct {
 		Id       string
 		Timezone string
 		Regex    string
+		Color    string
 	}
 	TimezoneHintCooldown int64
 }

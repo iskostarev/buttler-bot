@@ -32,6 +32,7 @@ type Session struct {
 
 type TimezoneInfo struct {
 	Id       string
+	Color    string
 	Timezone *time.Location
 	Regex    *regexp.Regexp
 }
@@ -69,7 +70,7 @@ func InitSession(config *Config) (session Session, err error) {
 			return session, nil
 		}
 
-		tzinfo := TimezoneInfo{Id: tz.Id, Regex: regex, Timezone: timezone}
+		tzinfo := TimezoneInfo{Id: tz.Id, Color: tz.Color, Regex: regex, Timezone: timezone}
 		session.Timezones = append(session.Timezones, tzinfo)
 	}
 

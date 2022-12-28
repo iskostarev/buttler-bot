@@ -125,7 +125,12 @@ func (session *Session) respondToTimezoneHints(logger logrus.FieldLogger, roomId
 			}
 
 			responsePlain += tztext
-			responseHtml += "<code>" + template.HTMLEscapeString(tztext) + "</code>"
+
+			tzHtml := "<code>" + template.HTMLEscapeString(tztext) + "</code>"
+			if tzinfo.Color != "" {
+				tzHtml = fmt.Sprintf("<font color=\"%s\">%s</font>", tzinfo.Color, tzHtml)
+			}
+			responseHtml += tzHtml
 		}
 	}
 
