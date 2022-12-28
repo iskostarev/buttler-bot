@@ -43,17 +43,17 @@ func convertTimezone(strTime string, sourceTz, targetTz *time.Location, targetId
 
 func (session *Session) respondToPing(logger logrus.FieldLogger, roomId mxid.RoomID, message string) {
 	if message == "!buttler ping" {
-		session.RespondMessage(logger, roomId, "Pong!")
+		session.RespondMessage(logger, roomId, NewBasicTextMessage("Pong!"))
 	}
 }
 
 func (session *Session) respondToPraise(logger logrus.FieldLogger, roomId mxid.RoomID, message string) {
 	message = strings.ToLower(message)
 	if strings.HasPrefix(message, "good bot") {
-		session.RespondMessage(logger, roomId, ":)")
+		session.RespondMessage(logger, roomId, NewBasicTextMessage(":)"))
 	}
 	if strings.HasPrefix(message, "bad bot") {
-		session.RespondMessage(logger, roomId, ":(")
+		session.RespondMessage(logger, roomId, NewBasicTextMessage(":("))
 	}
 }
 
@@ -127,7 +127,7 @@ func (session *Session) respondToTimezoneHints(logger logrus.FieldLogger, roomId
 		response += line
 	}
 
-	if session.RespondMessage(logger, roomId, response) {
+	if session.RespondMessage(logger, roomId, NewBasicTextMessage(response)) {
 		for _, curHint := range requiredHints {
 			session.updateTimezoneHintCooldown(roomId, curHint.time, curHint.tzid)
 		}

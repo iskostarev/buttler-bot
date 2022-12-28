@@ -79,8 +79,8 @@ func InitSession(config *Config) (session Session, err error) {
 	return
 }
 
-func (session *Session) RespondMessage(logger logrus.FieldLogger, roomId mxid.RoomID, message string) bool {
-	if _, err := session.Client.SendText(roomId, message); err != nil {
+func (session *Session) RespondMessage(logger logrus.FieldLogger, roomId mxid.RoomID, message Message) bool {
+	if _, err := session.Client.SendMessageEvent(roomId, mxevent.EventMessage, message.AsEvent()); err != nil {
 		logger.Errorf("Failed to respond: %s", err.Error())
 		return false
 	}
