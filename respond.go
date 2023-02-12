@@ -124,6 +124,7 @@ func (session *Session) respondToTimezoneHints(logger logrus.FieldLogger, roomId
 				tztext = convertTimezone(curHint.time, curHint.tzone, tzinfo.Timezone, tzinfo.Id)
 			}
 
+			tztext = fmt.Sprintf("[%s]", tztext)
 			responsePlain += tztext
 
 			tzHtml := "<code>" + template.HTMLEscapeString(tztext) + "</code>"
