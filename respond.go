@@ -28,7 +28,7 @@ func convertTimezone(strTime string, sourceTz, targetTz *time.Location, targetId
 		panic(err.Error())
 	}
 
-	parsedTime = parsedTime.AddDate(nowYear, nowMonth, nowDay)
+	parsedTime = parsedTime.AddDate(nowYear, nowMonth-1, nowDay-1)
 
 	convertedTime := parsedTime.In(targetTz)
 	result := fmt.Sprintf("%s %s", convertedTime.Format("15:04"), targetId)
