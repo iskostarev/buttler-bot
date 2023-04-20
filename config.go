@@ -14,9 +14,9 @@ type Config struct {
 		Output string
 	}
 	Matrix struct {
-		UserId          string
-		AccessTokenPath string
-		HomeserverUrl   string
+		Username      string
+		PasswordPath  string
+		HomeserverUrl string
 	}
 	Timezones []struct {
 		Id       string

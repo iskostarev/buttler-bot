@@ -44,15 +44,23 @@ func buildTimezoneRegexp(innerRegex string) (result *regexp.Regexp, err error) {
 }
 
 func InitSession(config *Config) (session Session, err error) {
-	userId := mxid.UserID(config.Matrix.UserId)
-
-	accessTokenBytes, err := os.ReadFile(config.Matrix.AccessTokenPath)
+	passwordBytes, err := os.ReadFile(config.Matrix.PasswordPath)
 	if err != nil {
 		return
 	}
-	accessToken := strings.TrimSpace(string(accessTokenBytes))
+	password := strings.TrimSpace(string(passwordBytes))
 
-	session.Client, err = mautrix.NewClient(config.Matrix.HomeserverUrl, userId, accessToken)
+	session.Client, err = mautrix.NewClient(config.Matrix.HomeserverUrl, "", "")
+	if err != nil {
+		return
+	}
+
+	_, err = session.Client.Login(&mautrix.ReqLogin{
+		Type:             "m.login.password",
+		Identifier:       mautrix.UserIdentifier{Type: mautrix.IdentifierTypeUser, User: config.Matrix.Username},
+		Password:         password,
+		StoreCredentials: true,
+	})
 	if err != nil {
 		return
 	}
