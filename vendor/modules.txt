@@ -1,6 +1,17 @@
+# github.com/mattn/go-colorable v0.1.13
+## explicit; go 1.15
+github.com/mattn/go-colorable
+# github.com/mattn/go-isatty v0.0.18
+## explicit; go 1.15
+github.com/mattn/go-isatty
 # github.com/pkg/errors v0.9.1
 ## explicit
 github.com/pkg/errors
+# github.com/rs/zerolog v1.29.1
+## explicit; go 1.15
+github.com/rs/zerolog
+github.com/rs/zerolog/internal/cbor
+github.com/rs/zerolog/internal/json
 # github.com/sirupsen/logrus v1.9.0
 ## explicit; go 1.13
 github.com/sirupsen/logrus
@@ -16,21 +27,25 @@ github.com/tidwall/pretty
 # github.com/tidwall/sjson v1.2.5
 ## explicit; go 1.14
 github.com/tidwall/sjson
-# golang.org/x/crypto v0.6.0
+# golang.org/x/crypto v0.8.0
 ## explicit; go 1.17
 golang.org/x/crypto/hkdf
 golang.org/x/crypto/pbkdf2
-# golang.org/x/net v0.7.0
+# golang.org/x/net v0.9.0
 ## explicit; go 1.17
 golang.org/x/net/html
 golang.org/x/net/html/atom
-# golang.org/x/sys v0.5.0
+# golang.org/x/sys v0.7.0
 ## explicit; go 1.17
 golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix
 golang.org/x/sys/windows
-# maunium.net/go/mautrix v0.14.0
-## explicit; go 1.18
+# maunium.net/go/maulogger/v2 v2.4.1
+## explicit; go 1.19
+maunium.net/go/maulogger/v2
+maunium.net/go/maulogger/v2/maulogadapt
+# maunium.net/go/mautrix v0.15.1
+## explicit; go 1.19
 maunium.net/go/mautrix
 maunium.net/go/mautrix/crypto/attachment
 maunium.net/go/mautrix/crypto/utils
