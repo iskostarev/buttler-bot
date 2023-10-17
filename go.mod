@@ -4,20 +4,22 @@ go 1.19
 
 require (
 	github.com/pkg/errors v0.9.1
-	github.com/sirupsen/logrus v1.9.0
-	maunium.net/go/mautrix v0.15.1
+	github.com/sirupsen/logrus v1.9.3
+	maunium.net/go/mautrix v0.16.1
 )
 
 require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
-	github.com/mattn/go-isatty v0.0.18 // indirect
-	github.com/rs/zerolog v1.29.1 // indirect
-	github.com/tidwall/gjson v1.14.4 // indirect
+	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/rs/zerolog v1.31.0 // indirect
+	github.com/tidwall/gjson v1.17.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
-	golang.org/x/crypto v0.8.0 // indirect
-	golang.org/x/net v0.9.0 // indirect
-	golang.org/x/sys v0.7.0 // indirect
+	go.mau.fi/util v0.2.0 // indirect
+	golang.org/x/crypto v0.14.0 // indirect
+	golang.org/x/exp v0.0.0-20231006140011-7918f672742d // indirect
+	golang.org/x/net v0.17.0 // indirect
+	golang.org/x/sys v0.13.0 // indirect
 	maunium.net/go/maulogger/v2 v2.4.1 // indirect
 )

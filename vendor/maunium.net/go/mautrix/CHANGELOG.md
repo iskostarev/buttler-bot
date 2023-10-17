@@ -1,3 +1,80 @@
+## v0.16.1 (2023-09-16)
+
+* **Breaking change *(id)*** Updated user ID localpart encoding to not encode
+  `+` as per [MSC4009].
+* *(bridge)* Added bridge utility to handle double puppeting logins.
+  * The utility supports automatic logins with all three current methods
+    (shared secret, legacy appservice, new appservice).
+* *(appservice)* Added warning logs and timeout on appservice event handling.
+  * Defaults to warning after 30 seconds and timeout 15 minutes after that.
+  * Timeouts can be adjusted or disabled by setting `ExecSync` variables in the
+    `EventProcessor`.
+* *(crypto/olm)* Added `PkDecryption` wrapper.
+
+[MSC4009]: https://github.com/matrix-org/matrix-spec-proposals/pull/4009
+
+## v0.16.0 (2023-08-16)
+
+* Bumped minimum Go version to 1.20.
+* **Breaking change *(util)*** Moved package to [go.mau.fi/util](https://go.mau.fi/util/)
+* *(event)* Removed MSC2716 `historical` field in the `m.room.power_levels`
+  event content struct.
+* *(bridge)* Added `--version-json` flag to print bridge version info as JSON.
+* *(appservice)* Added option to use custom transaction handler for websocket mode.
+
+## v0.15.4 (2023-07-16)
+
+* *(client)* Deprecated MSC2716 methods and added new Beeper-specific batch
+  send methods, as upstream MSC2716 support has been abandoned.
+* *(client)* Added proper error handling and automatic retries to media
+  downloads.
+* *(crypto, bridge)* Added option to remove all keys that were received before
+  the automatic ratcheting was implemented (in v0.15.1).
+* *(dbutil)* Added `JSON` utility for writing/reading arbitrary JSON objects to
+  the db conveniently without manually de/serializing.
+
+## v0.15.3 (2023-06-16)
+
+* *(synapseadmin)* Added wrappers for some Synapse admin API endpoints.
+* *(pushrules)* Implemented new `event_property_is` and `event_property_contains`
+  push rule condition kinds as per MSC3758 and MSC3966.
+* *(bridge)* Moved websocket code from mautrix-imessage to enable all bridges
+  to use appservice websockets easily.
+* *(bridge)* Added retrying for appservice pings.
+* *(types)* Removed unstable field for MSC3952 (intentional mentions).
+* *(client)* Deprecated `OldEventIgnorer` and added `Client.DontProcessOldEvents`
+  to replace it.
+* *(client)* Added `MoveInviteState` sync handler for moving state events in
+  the invite section of sync inside the invite event itself.
+* *(crypto)* Added option to not rotate keys when devices change.
+* *(crypto)* Added additional duplicate message index check if decryption fails
+  because the keys had been ratcheted forward.
+* *(client)* Stabilized support for asynchronous uploads.
+  * `UnstableCreateMXC` and `UnstableUploadAsync` were renamed to `CreateMXC`
+    and `UploadAsync` respectively.
+* *(util/dbutil)* Added option to use a separate database connection pool for
+  read-only transactions.
+  * This is mostly meant for SQLite and it enables read-only transactions that
+    don't lock the database, even when normal transactions are configured to
+    acquire a write lock immediately.
+* *(util/dbutil)* Enabled caller info in zerolog by default.
+
+## v0.15.2 (2023-05-16)
+
+* *(client)* Changed member-fetching methods to clear existing member info in
+  state store.
+* *(client)* Added support for inserting mautrix-go commit hash into default
+  user agent at compile time.
+* *(bridge)* Fixed bridge bot intent not having state store set.
+* *(client)* Fixed `RespError` marshaling mutating the `ExtraData` map and
+  potentially causing panics.
+* *(util/dbutil)* Added `DoTxn` method for an easier way to manage database
+  transactions.
+* *(util)* Added a zerolog `CallerMarshalFunc` implementation that includes the
+  function name.
+* *(bridge)* Added error reply to encrypted messages if the bridge isn't
+  configured to do encryption.
+
 ## v0.15.1 (2023-04-16)
 
 * *(crypto, bridge)* Added options to automatically ratchet/delete megolm

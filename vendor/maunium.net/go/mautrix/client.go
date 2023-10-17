@@ -14,11 +14,11 @@ import (
 	"net/url"
 	"os"
 	"strconv"
-	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog"
+	"go.mau.fi/util/retryafter"
 	"maunium.net/go/maulogger/v2/maulogadapt"
 
 	"maunium.net/go/mautrix/event"
@@ -258,42 +258,52 @@ const (
 	LogRequestIDContextKey
 )
 
-func (cli *Client) LogRequest(req *http.Request) {
+func (cli *Client) RequestStart(req *http.Request) {
 	if cli.RequestHook != nil {
 		cli.RequestHook(req)
 	}
-	evt := zerolog.Ctx(req.Context()).Debug().
-		Str("method", req.Method).
-		Str("url", req.URL.String())
-	body := req.Context().Value(LogBodyContextKey)
-	if body != nil {
-		evt.Interface("body", body)
-	}
-	evt.Msg("Sending request")
 }
 
-func (cli *Client) LogRequestDone(req *http.Request, resp *http.Response, handlerErr error, contentLength int, duration time.Duration) {
-	if cli.ResponseHook != nil {
-		cli.ResponseHook(req, resp, duration)
+func (cli *Client) LogRequestDone(req *http.Request, resp *http.Response, err error, handlerErr error, contentLength int, duration time.Duration) {
+	var evt *zerolog.Event
+	if err != nil {
+		evt = zerolog.Ctx(req.Context()).Err(err)
+	} else if handlerErr != nil {
+		evt = zerolog.Ctx(req.Context()).Warn().
+			AnErr("body_parse_err", handlerErr)
+	} else {
+		evt = zerolog.Ctx(req.Context()).Debug()
 	}
-	mime := resp.Header.Get("Content-Type")
-	length := resp.ContentLength
-	if length == -1 && contentLength > 0 {
-		length = int64(contentLength)
-	}
-	path := strings.TrimPrefix(req.URL.Path, cli.HomeserverURL.Path)
-	path = strings.TrimPrefix(path, "/_matrix/client")
-	evt := zerolog.Ctx(req.Context()).Debug().
+	evt = evt.
 		Str("method", req.Method).
-		Str("path", path).
-		Int("status_code", resp.StatusCode).
-		Int64("response_length", length).
-		Str("response_mime", mime).
+		Str("url", req.URL.String()).
 		Dur("duration", duration)
-	if handlerErr != nil {
-		evt.AnErr("body_parse_err", handlerErr)
+	if resp != nil {
+		if cli.ResponseHook != nil {
+			cli.ResponseHook(req, resp, duration)
+		}
+		mime := resp.Header.Get("Content-Type")
+		length := resp.ContentLength
+		if length == -1 && contentLength > 0 {
+			length = int64(contentLength)
+		}
+		evt = evt.Int("status_code", resp.StatusCode).
+			Int64("response_length", length).
+			Str("response_mime", mime)
+		if serverRequestID := resp.Header.Get("X-Beeper-Request-ID"); serverRequestID != "" {
+			evt.Str("beeper_request_id", serverRequestID)
+		}
 	}
-	evt.Msg("Request completed")
+	if body := req.Context().Value(LogBodyContextKey); body != nil {
+		evt.Interface("req_body", body)
+	}
+	if err != nil {
+		evt.Msg("Request failed")
+	} else if handlerErr != nil {
+		evt.Msg("Request parsing failed")
+	} else {
+		evt.Msg("Request completed")
+	}
 }
 
 func (cli *Client) MakeRequest(method string, httpURL string, reqBody interface{}, resBody interface{}) ([]byte, error) {
@@ -400,7 +410,7 @@ func (cli *Client) MakeFullRequest(params FullRequest) ([]byte, error) {
 		return nil, err
 	}
 	if params.Handler == nil {
-		params.Handler = cli.handleNormalResponse
+		params.Handler = handleNormalResponse
 	}
 	req.Header.Set("User-Agent", cli.UserAgent)
 	if len(cli.AccessToken) > 0 {
@@ -438,7 +448,7 @@ func (cli *Client) doRetry(req *http.Request, cause error, retries int, backoff 
 	return cli.executeCompiledRequest(req, retries-1, backoff*2, responseJSON, handler)
 }
 
-func (cli *Client) readRequestBody(req *http.Request, res *http.Response) ([]byte, error) {
+func readRequestBody(req *http.Request, res *http.Response) ([]byte, error) {
 	contents, err := io.ReadAll(res.Body)
 	if err != nil {
 		return nil, HTTPError{
@@ -460,12 +470,12 @@ func closeTemp(log *zerolog.Logger, file *os.File) {
 	}
 }
 
-func (cli *Client) streamResponse(req *http.Request, res *http.Response, responseJSON interface{}) ([]byte, error) {
+func streamResponse(req *http.Request, res *http.Response, responseJSON interface{}) ([]byte, error) {
 	log := zerolog.Ctx(req.Context())
 	file, err := os.CreateTemp("", "mautrix-response-")
 	if err != nil {
 		log.Warn().Err(err).Msg("Failed to create temporary file for streaming response")
-		_, err = cli.handleNormalResponse(req, res, responseJSON)
+		_, err = handleNormalResponse(req, res, responseJSON)
 		return nil, err
 	}
 	defer closeTemp(log, file)
@@ -480,8 +490,8 @@ func (cli *Client) streamResponse(req *http.Request, res *http.Response, respons
 	}
 }
 
-func (cli *Client) handleNormalResponse(req *http.Request, res *http.Response, responseJSON interface{}) ([]byte, error) {
-	if contents, err := cli.readRequestBody(req, res); err != nil {
+func handleNormalResponse(req *http.Request, res *http.Response, responseJSON interface{}) ([]byte, error) {
+	if contents, err := readRequestBody(req, res); err != nil {
 		return nil, err
 	} else if responseJSON == nil {
 		return contents, nil
@@ -499,8 +509,8 @@ func (cli *Client) handleNormalResponse(req *http.Request, res *http.Response, r
 	}
 }
 
-func (cli *Client) handleResponseError(req *http.Request, res *http.Response) ([]byte, error) {
-	contents, err := cli.readRequestBody(req, res)
+func ParseErrorResponse(req *http.Request, res *http.Response) ([]byte, error) {
+	contents, err := readRequestBody(req, res)
 	if err != nil {
 		return contents, err
 	}
@@ -517,38 +527,8 @@ func (cli *Client) handleResponseError(req *http.Request, res *http.Response) ([
 	}
 }
 
-// parseBackoffFromResponse extracts the backoff time specified in the Retry-After header if present. See
-// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Retry-After.
-func (cli *Client) parseBackoffFromResponse(req *http.Request, res *http.Response, now time.Time, fallback time.Duration) time.Duration {
-	retryAfterHeaderValue := res.Header.Get("Retry-After")
-	if retryAfterHeaderValue == "" {
-		return fallback
-	}
-
-	if t, err := time.Parse(http.TimeFormat, retryAfterHeaderValue); err == nil {
-		return t.Sub(now)
-	}
-
-	if seconds, err := strconv.Atoi(retryAfterHeaderValue); err == nil {
-		return time.Duration(seconds) * time.Second
-	}
-
-	zerolog.Ctx(req.Context()).Warn().
-		Str("retry_after", retryAfterHeaderValue).
-		Msg("Failed to parse Retry-After header value")
-
-	return fallback
-}
-
-func (cli *Client) shouldRetry(res *http.Response) bool {
-	return res.StatusCode == http.StatusBadGateway ||
-		res.StatusCode == http.StatusServiceUnavailable ||
-		res.StatusCode == http.StatusGatewayTimeout ||
-		(res.StatusCode == http.StatusTooManyRequests && !cli.IgnoreRateLimit)
-}
-
 func (cli *Client) executeCompiledRequest(req *http.Request, retries int, backoff time.Duration, responseJSON interface{}, handler ClientResponseHandler) ([]byte, error) {
-	cli.LogRequest(req)
+	cli.RequestStart(req)
 	startTime := time.Now()
 	res, err := cli.Client.Do(req)
 	duration := time.Now().Sub(startTime)
@@ -559,29 +539,29 @@ func (cli *Client) executeCompiledRequest(req *http.Request, retries int, backof
 		if retries > 0 {
 			return cli.doRetry(req, err, retries, backoff, responseJSON, handler)
 		}
-		return nil, HTTPError{
+		err = HTTPError{
 			Request:  req,
 			Response: res,
 
 			Message:      "request error",
 			WrappedError: err,
 		}
+		cli.LogRequestDone(req, res, err, nil, 0, duration)
+		return nil, err
 	}
 
-	if retries > 0 && cli.shouldRetry(res) {
-		if res.StatusCode == http.StatusTooManyRequests {
-			backoff = cli.parseBackoffFromResponse(req, res, time.Now(), backoff)
-		}
+	if retries > 0 && retryafter.Should(res.StatusCode, !cli.IgnoreRateLimit) {
+		backoff = retryafter.Parse(res.Header.Get("Retry-After"), backoff)
 		return cli.doRetry(req, fmt.Errorf("HTTP %d", res.StatusCode), retries, backoff, responseJSON, handler)
 	}
 
 	var body []byte
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		body, err = cli.handleResponseError(req, res)
-		cli.LogRequestDone(req, res, nil, len(body), duration)
+		body, err = ParseErrorResponse(req, res)
+		cli.LogRequestDone(req, res, nil, nil, len(body), duration)
 	} else {
 		body, err = handler(req, res, responseJSON)
-		cli.LogRequestDone(req, res, err, len(body), duration)
+		cli.LogRequestDone(req, res, nil, err, len(body), duration)
 	}
 	return body, err
 }
@@ -654,7 +634,7 @@ func (cli *Client) FullSyncRequest(req ReqSync) (resp *RespSync, err error) {
 		MaxAttempts: 1,
 	}
 	if req.StreamResponse {
-		fullReq.Handler = cli.streamResponse
+		fullReq.Handler = streamResponse
 	}
 	start := time.Now()
 	_, err = cli.MakeFullRequest(fullReq)
@@ -1330,6 +1310,7 @@ func (cli *Client) State(roomID id.RoomID) (stateMap RoomStateMap, err error) {
 		Handler:      parseRoomStateArray,
 	})
 	if err == nil && cli.StateStore != nil {
+		cli.StateStore.ClearCachedMembers(roomID)
 		for _, evts := range stateMap {
 			for _, evt := range evts {
 				UpdateStateStore(cli.StateStore, evt)
@@ -1367,26 +1348,80 @@ func (cli *Client) Download(mxcURL id.ContentURI) (io.ReadCloser, error) {
 }
 
 func (cli *Client) DownloadContext(ctx context.Context, mxcURL id.ContentURI) (io.ReadCloser, error) {
-	_, resp, err := cli.downloadContext(ctx, mxcURL)
-	return resp.Body, err
+	resp, err := cli.downloadContext(ctx, mxcURL)
+	if err != nil {
+		return nil, err
+	}
+	return resp.Body, nil
 }
 
-func (cli *Client) downloadContext(ctx context.Context, mxcURL id.ContentURI) (*http.Request, *http.Response, error) {
+func (cli *Client) doMediaRetry(req *http.Request, cause error, retries int, backoff time.Duration) (*http.Response, error) {
+	log := zerolog.Ctx(req.Context())
+	if req.Body != nil {
+		if req.GetBody == nil {
+			log.Warn().Msg("Failed to get new body to retry request: GetBody is nil")
+			return nil, cause
+		}
+		var err error
+		req.Body, err = req.GetBody()
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to get new body to retry request")
+			return nil, cause
+		}
+	}
+	log.Warn().Err(cause).
+		Int("retry_in_seconds", int(backoff.Seconds())).
+		Msg("Request failed, retrying")
+	time.Sleep(backoff)
+	return cli.doMediaRequest(req, retries-1, backoff*2)
+}
+
+func (cli *Client) doMediaRequest(req *http.Request, retries int, backoff time.Duration) (*http.Response, error) {
+	cli.RequestStart(req)
+	startTime := time.Now()
+	res, err := cli.Client.Do(req)
+	duration := time.Now().Sub(startTime)
+	if err != nil {
+		if retries > 0 {
+			return cli.doMediaRetry(req, err, retries, backoff)
+		}
+		err = HTTPError{
+			Request:  req,
+			Response: res,
+
+			Message:      "request error",
+			WrappedError: err,
+		}
+		cli.LogRequestDone(req, res, err, nil, 0, duration)
+		return nil, err
+	}
+
+	if retries > 0 && retryafter.Should(res.StatusCode, !cli.IgnoreRateLimit) {
+		backoff = retryafter.Parse(res.Header.Get("Retry-After"), backoff)
+		return cli.doMediaRetry(req, fmt.Errorf("HTTP %d", res.StatusCode), retries, backoff)
+	}
+
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		var body []byte
+		body, err = ParseErrorResponse(req, res)
+		cli.LogRequestDone(req, res, err, nil, len(body), duration)
+	} else {
+		cli.LogRequestDone(req, res, nil, nil, -1, duration)
+	}
+	return res, err
+}
+
+func (cli *Client) downloadContext(ctx context.Context, mxcURL id.ContentURI) (*http.Response, error) {
 	ctxLog := zerolog.Ctx(ctx)
 	if ctxLog.GetLevel() == zerolog.Disabled || ctxLog == zerolog.DefaultContextLogger {
 		ctx = cli.Log.WithContext(ctx)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, cli.GetDownloadURL(mxcURL), nil)
 	if err != nil {
-		return req, nil, err
+		return nil, err
 	}
 	req.Header.Set("User-Agent", cli.UserAgent+" (media downloader)")
-	cli.LogRequest(req)
-	if resp, err := cli.Client.Do(req); err != nil {
-		return req, nil, err
-	} else {
-		return req, resp, nil
-	}
+	return cli.doMediaRequest(req, cli.DefaultHTTPRetries, 4*time.Second)
 }
 
 func (cli *Client) DownloadBytes(mxcURL id.ContentURI) ([]byte, error) {
@@ -1394,25 +1429,19 @@ func (cli *Client) DownloadBytes(mxcURL id.ContentURI) ([]byte, error) {
 }
 
 func (cli *Client) DownloadBytesContext(ctx context.Context, mxcURL id.ContentURI) ([]byte, error) {
-	req, resp, err := cli.downloadContext(ctx, mxcURL)
+	resp, err := cli.downloadContext(ctx, mxcURL)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= 300 || resp.StatusCode < 200 {
-		respErr := &RespError{}
-		if _ = json.NewDecoder(resp.Body).Decode(respErr); respErr.ErrCode == "" {
-			respErr = nil
-		}
-		return nil, HTTPError{Request: req, Response: resp, RespError: respErr}
-	}
 	return io.ReadAll(resp.Body)
 }
 
-// UnstableCreateMXC creates a blank Matrix content URI to allow uploading the content asynchronously later.
-// See https://github.com/matrix-org/matrix-spec-proposals/pull/2246
-func (cli *Client) UnstableCreateMXC() (*RespCreateMXC, error) {
-	u, _ := url.Parse(cli.BuildURL(MediaURLPath{"unstable", "fi.mau.msc2246", "create"}))
+// CreateMXC creates a blank Matrix content URI to allow uploading the content asynchronously later.
+//
+// See https://spec.matrix.org/v1.7/client-server-api/#post_matrixmediav1create
+func (cli *Client) CreateMXC() (*RespCreateMXC, error) {
+	u, _ := url.Parse(cli.BuildURL(MediaURLPath{"v1", "create"}))
 	var m RespCreateMXC
 	_, err := cli.MakeFullRequest(FullRequest{
 		Method:       http.MethodPost,
@@ -1422,19 +1451,22 @@ func (cli *Client) UnstableCreateMXC() (*RespCreateMXC, error) {
 	return &m, err
 }
 
-// UnstableUploadAsync creates a blank content URI with UnstableCreateMXC, starts uploading the data in the background
-// and returns the created MXC immediately. See https://github.com/matrix-org/matrix-spec-proposals/pull/2246 for more info.
-func (cli *Client) UnstableUploadAsync(req ReqUploadMedia) (*RespCreateMXC, error) {
-	resp, err := cli.UnstableCreateMXC()
+// UploadAsync creates a blank content URI with CreateMXC, starts uploading the data in the background
+// and returns the created MXC immediately.
+//
+// See https://spec.matrix.org/v1.7/client-server-api/#post_matrixmediav1create
+// and https://spec.matrix.org/v1.7/client-server-api/#put_matrixmediav3uploadservernamemediaid
+func (cli *Client) UploadAsync(req ReqUploadMedia) (*RespCreateMXC, error) {
+	resp, err := cli.CreateMXC()
 	if err != nil {
 		return nil, err
 	}
-	req.UnstableMXC = resp.ContentURI
-	req.UploadURL = resp.UploadURL
+	req.MXC = resp.ContentURI
+	req.UnstableUploadURL = resp.UnstableUploadURL
 	go func() {
 		_, err = cli.UploadMedia(req)
 		if err != nil {
-			cli.Log.Error().Str("mxc", req.UnstableMXC.String()).Err(err).Msg("Async upload of media failed")
+			cli.Log.Error().Str("mxc", req.MXC.String()).Err(err).Msg("Async upload of media failed")
 		}
 	}()
 	return resp, nil
@@ -1470,13 +1502,13 @@ type ReqUploadMedia struct {
 	ContentType   string
 	FileName      string
 
-	// UnstableMXC specifies an existing MXC URI which doesn't have content yet to upload into.
-	// See https://github.com/matrix-org/matrix-spec-proposals/pull/2246 for more info.
-	UnstableMXC id.ContentURI
+	// MXC specifies an existing MXC URI which doesn't have content yet to upload into.
+	// See https://spec.matrix.org/unstable/client-server-api/#put_matrixmediav3uploadservernamemediaid
+	MXC id.ContentURI
 
-	// UploadURL specifies the URL to upload the content to (MSC3870)
+	// UnstableUploadURL specifies the URL to upload the content to. MXC must also be set.
 	// see https://github.com/matrix-org/matrix-spec-proposals/pull/3870 for more info
-	UploadURL string
+	UnstableUploadURL string
 }
 
 func (cli *Client) tryUploadMediaToURL(url, contentType string, content io.Reader) (*http.Response, error) {
@@ -1504,7 +1536,7 @@ func (cli *Client) uploadMediaToURL(data ReqUploadMedia) (*RespMediaUpload, erro
 		} else {
 			data.Content = nil
 		}
-		resp, err := cli.tryUploadMediaToURL(data.UploadURL, data.ContentType, reader)
+		resp, err := cli.tryUploadMediaToURL(data.UnstableUploadURL, data.ContentType, reader)
 		if err == nil {
 			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 				// Everything is fine
@@ -1513,10 +1545,12 @@ func (cli *Client) uploadMediaToURL(data ReqUploadMedia) (*RespMediaUpload, erro
 			err = fmt.Errorf("HTTP %d", resp.StatusCode)
 		}
 		if retries <= 0 {
-			cli.Log.Warn().Str("url", data.UploadURL).Err(err).Msg("Error uploading media to external URL, not retrying")
+			cli.Log.Warn().Str("url", data.UnstableUploadURL).Err(err).
+				Msg("Error uploading media to external URL, not retrying")
 			return nil, err
 		}
-		cli.Log.Warn().Str("url", data.UploadURL).Err(err).Msg("Error uploading media to external URL, retrying")
+		cli.Log.Warn().Str("url", data.UnstableUploadURL).Err(err).
+			Msg("Error uploading media to external URL, retrying")
 		retries--
 	}
 
@@ -1525,7 +1559,7 @@ func (cli *Client) uploadMediaToURL(data ReqUploadMedia) (*RespMediaUpload, erro
 		query["filename"] = data.FileName
 	}
 
-	notifyURL := cli.BuildURLWithQuery(MediaURLPath{"unstable", "fi.mau.msc2246", "upload", data.UnstableMXC.Homeserver, data.UnstableMXC.FileID, "complete"}, query)
+	notifyURL := cli.BuildURLWithQuery(MediaURLPath{"unstable", "com.beeper.msc3870", "upload", data.MXC.Homeserver, data.MXC.FileID, "complete"}, query)
 
 	var m *RespMediaUpload
 	_, err := cli.MakeFullRequest(FullRequest{
@@ -1541,15 +1575,18 @@ func (cli *Client) uploadMediaToURL(data ReqUploadMedia) (*RespMediaUpload, erro
 }
 
 // UploadMedia uploads the given data to the content repository and returns an MXC URI.
-// See https://spec.matrix.org/v1.2/client-server-api/#post_matrixmediav3upload
+// See https://spec.matrix.org/v1.7/client-server-api/#post_matrixmediav3upload
 func (cli *Client) UploadMedia(data ReqUploadMedia) (*RespMediaUpload, error) {
-	if data.UploadURL != "" {
+	if data.UnstableUploadURL != "" {
+		if data.MXC.IsEmpty() {
+			return nil, errors.New("MXC must also be set when uploading to external URL")
+		}
 		return cli.uploadMediaToURL(data)
 	}
 	u, _ := url.Parse(cli.BuildURL(MediaURLPath{"v3", "upload"}))
 	method := http.MethodPost
-	if !data.UnstableMXC.IsEmpty() {
-		u, _ = url.Parse(cli.BuildURL(MediaURLPath{"unstable", "fi.mau.msc2246", "upload", data.UnstableMXC.Homeserver, data.UnstableMXC.FileID}))
+	if !data.MXC.IsEmpty() {
+		u, _ = url.Parse(cli.BuildURL(MediaURLPath{"v3", "upload", data.MXC.Homeserver, data.MXC.FileID}))
 		method = http.MethodPut
 	}
 	if len(data.FileName) > 0 {
@@ -1596,6 +1633,7 @@ func (cli *Client) JoinedMembers(roomID id.RoomID) (resp *RespJoinedMembers, err
 	u := cli.BuildClientURL("v3", "rooms", roomID, "joined_members")
 	_, err = cli.MakeRequest("GET", u, nil, &resp)
 	if err == nil && cli.StateStore != nil {
+		cli.StateStore.ClearCachedMembers(roomID, event.MembershipJoin)
 		for userID, member := range resp.Joined {
 			cli.StateStore.SetMember(roomID, userID, &event.MemberEventContent{
 				Membership:  event.MembershipJoin,
@@ -1625,6 +1663,13 @@ func (cli *Client) Members(roomID id.RoomID, req ...ReqMembers) (resp *RespMembe
 	u := cli.BuildURLWithQuery(ClientURLPath{"v3", "rooms", roomID, "members"}, query)
 	_, err = cli.MakeRequest("GET", u, nil, &resp)
 	if err == nil && cli.StateStore != nil {
+		var clearMemberships []event.Membership
+		if extra.Membership != "" {
+			clearMemberships = append(clearMemberships, extra.Membership)
+		}
+		if extra.NotMembership == "" {
+			cli.StateStore.ClearCachedMembers(roomID, clearMemberships...)
+		}
 		for _, evt := range resp.Chunk {
 			UpdateStateStore(cli.StateStore, evt)
 		}
@@ -1959,7 +2004,7 @@ func (cli *Client) PutPushRule(scope string, kind pushrules.PushRuleType, ruleID
 
 // BatchSend sends a batch of historical events into a room. This is only available for appservices.
 //
-// See https://github.com/matrix-org/matrix-doc/pull/2716 for more info.
+// Deprecated: MSC2716 has been abandoned, so this is now Beeper-specific. BeeperBatchSend should be used instead.
 func (cli *Client) BatchSend(roomID id.RoomID, req *ReqBatchSend) (resp *RespBatchSend, err error) {
 	path := ClientURLPath{"unstable", "org.matrix.msc2716", "rooms", roomID, "batch_send"}
 	query := map[string]string{
@@ -1981,12 +2026,18 @@ func (cli *Client) BatchSend(roomID id.RoomID, req *ReqBatchSend) (resp *RespBat
 func (cli *Client) AppservicePing(id, txnID string) (resp *RespAppservicePing, err error) {
 	_, err = cli.MakeFullRequest(FullRequest{
 		Method:       http.MethodPost,
-		URL:          cli.BuildClientURL("unstable", "fi.mau.msc2659", "appservice", id, "ping"),
+		URL:          cli.BuildClientURL("v1", "appservice", id, "ping"),
 		RequestJSON:  &ReqAppservicePing{TxnID: txnID},
 		ResponseJSON: &resp,
 		// This endpoint intentionally returns 50x, so don't retry
 		MaxAttempts: 1,
 	})
+	return
+}
+
+func (cli *Client) BeeperBatchSend(roomID id.RoomID, req *ReqBeeperBatchSend) (resp *RespBeeperBatchSend, err error) {
+	u := cli.BuildClientURL("unstable", "com.beeper.backfill", "rooms", roomID, "batch_send")
+	_, err = cli.MakeRequest(http.MethodPost, u, req, &resp)
 	return
 }
 
