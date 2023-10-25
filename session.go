@@ -53,6 +53,12 @@ func InitSession(config *Config) (session Session, err error) {
 	}
 	password := strings.TrimSpace(string(passwordBytes))
 
+	pickleKeyBytes, err := os.ReadFile(config.Crypto.PickleKeyPath)
+	if err != nil {
+		return
+	}
+	pickleKeyBytes = []byte(strings.TrimSpace(string(pickleKeyBytes)))
+
 	session.Client, err = mautrix.NewClient(config.Matrix.HomeserverUrl, "", "")
 	if err != nil {
 		return
@@ -67,7 +73,7 @@ func InitSession(config *Config) (session Session, err error) {
 
 	if config.Crypto.Enabled {
 		logrus.Infof("Initializing CryptoHelper...\n")
-		cryptoHelper, err := cryptohelper.NewCryptoHelper(session.Client, []byte(config.Crypto.PickleKey), config.Crypto.Database)
+		cryptoHelper, err := cryptohelper.NewCryptoHelper(session.Client, pickleKeyBytes, config.Crypto.Database)
 		if err != nil {
 			return session, err
 		}

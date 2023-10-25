@@ -14,9 +14,9 @@ type Config struct {
 		Output string
 	}
 	Crypto struct {
-		Enabled   bool
-		PickleKey string
-		Database  string
+		Enabled       bool
+		PickleKeyPath string
+		Database      string
 	}
 	Matrix struct {
 		Username      string
