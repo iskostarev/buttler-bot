@@ -72,7 +72,7 @@ func InitSession(config *Config) (session Session, err error) {
 	}
 
 	if config.Crypto.Enabled {
-		logrus.Infof("Initializing CryptoHelper...\n")
+		logrus.Infof("Initializing CryptoHelper...")
 		cryptoHelper, err := cryptohelper.NewCryptoHelper(session.Client, pickleKeyBytes, config.Crypto.Database)
 		if err != nil {
 			return session, err
@@ -85,10 +85,10 @@ func InitSession(config *Config) (session Session, err error) {
 		}
 
 		session.Client.Crypto = cryptoHelper
-		logrus.Infof("CryptoHelper initialized, logged in\n")
+		logrus.Infof("CryptoHelper initialized, logged in")
 	} else {
 		_, err = session.Client.Login(&reqLogin)
-		logrus.Infof("Logged in\n")
+		logrus.Infof("Logged in")
 	}
 
 	session.StartTimestamp = time.Now().UnixMilli()
@@ -141,7 +141,7 @@ func (session *Session) handleMessage(source mautrix.EventSource, evt *mxevent.E
 	})
 
 	message := evt.Content.Raw["body"].(string)
-	logger.Debugf("Message: %v\n", message)
+	logger.Debugf("Message: %v", message)
 
 	session.Respond(logger, evt.RoomID, message)
 
