@@ -13,6 +13,11 @@ type Config struct {
 		Level  string
 		Output string
 	}
+	Crypto struct {
+		Enabled   bool
+		PickleKey string
+		Database  string
+	}
 	Matrix struct {
 		Username      string
 		PasswordPath  string

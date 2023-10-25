@@ -10,7 +10,10 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 
+	_ "github.com/mattn/go-sqlite3"
+
 	"maunium.net/go/mautrix"
+	"maunium.net/go/mautrix/crypto/cryptohelper"
 	mxevent "maunium.net/go/mautrix/event"
 	mxid "maunium.net/go/mautrix/id"
 )
@@ -55,14 +58,31 @@ func InitSession(config *Config) (session Session, err error) {
 		return
 	}
 
-	_, err = session.Client.Login(&mautrix.ReqLogin{
-		Type:             "m.login.password",
+	reqLogin := mautrix.ReqLogin{
+		Type:             mautrix.AuthTypePassword,
 		Identifier:       mautrix.UserIdentifier{Type: mautrix.IdentifierTypeUser, User: config.Matrix.Username},
 		Password:         password,
 		StoreCredentials: true,
-	})
-	if err != nil {
-		return
+	}
+
+	if config.Crypto.Enabled {
+		logrus.Infof("Initializing CryptoHelper...\n")
+		cryptoHelper, err := cryptohelper.NewCryptoHelper(session.Client, []byte(config.Crypto.PickleKey), config.Crypto.Database)
+		if err != nil {
+			return session, err
+		}
+
+		cryptoHelper.LoginAs = &reqLogin
+		err = cryptoHelper.Init()
+		if err != nil {
+			return session, err
+		}
+
+		session.Client.Crypto = cryptoHelper
+		logrus.Infof("CryptoHelper initialized, logged in\n")
+	} else {
+		_, err = session.Client.Login(&reqLogin)
+		logrus.Infof("Logged in\n")
 	}
 
 	session.StartTimestamp = time.Now().UnixMilli()
