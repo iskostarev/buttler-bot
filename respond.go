@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"html/template"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -215,7 +216,7 @@ func (session *Session) Respond(logger logrus.FieldLogger, msgId mxid.EventID, r
 
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Warningf("Error while responding: %v", r)
+			logger.Warningf("Error while responding: %v\n%s\n", r, string(debug.Stack()))
 		}
 	}()
 	session.respondToPing(logger, roomId, message.Body)
