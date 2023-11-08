@@ -24,13 +24,29 @@ type RequestedTimezoneHint struct {
 	TzId   string
 }
 
+type MentionForward struct {
+	Regex *regexp.Regexp
+}
+
+type MentionForwarderStateKey struct {
+	RoomId mxid.RoomID
+	UserId mxid.UserID
+}
+
+type MentionForwarderState struct {
+	LastMentionTime time.Time
+}
+
 type Session struct {
-	Client               *mautrix.Client
-	StartTimestamp       int64
-	MessageCounter       int64
-	Timezones            []TimezoneInfo
-	LastTzRequests       map[RequestedTimezoneHint]int64
-	TimezoneHintCooldown int64
+	Client                 *mautrix.Client
+	StartTimestamp         int64
+	MessageCounter         int64
+	Timezones              []TimezoneInfo
+	MentionForwards        map[mxid.UserID]MentionForward
+	LastTzRequests         map[RequestedTimezoneHint]int64
+	MentionForwardersState map[MentionForwarderStateKey]*MentionForwarderState
+	TimezoneHintCooldown   int64
+	MentionForwardCooldown time.Duration
 }
 
 type TimezoneInfo struct {
@@ -108,8 +124,45 @@ func InitSession(config *Config) (session Session, err error) {
 		session.Timezones = append(session.Timezones, tzinfo)
 	}
 
+	session.MentionForwards = make(map[mxid.UserID]MentionForward)
+	for _, mfEntry := range config.MentionForwards {
+		userId := mxid.UserID(mfEntry.UserId)
+
+		_, repeat := session.MentionForwards[userId]
+		if repeat {
+			return session, fmt.Errorf("Repeating UserId %s in MentionForwards", userId)
+		}
+
+		regex, err := regexp.Compile(mfEntry.Regex)
+		if err != nil {
+			return session, nil
+		}
+
+		session.MentionForwards[userId] = MentionForward{Regex: regex}
+	}
+
 	session.LastTzRequests = make(map[RequestedTimezoneHint]int64)
 	session.TimezoneHintCooldown = config.TimezoneHintCooldown
+
+	session.MentionForwardCooldown, err = time.ParseDuration(config.MentionForwardCooldown)
+	if err != nil {
+		return
+	}
+
+	session.MentionForwardersState = make(map[MentionForwarderStateKey]*MentionForwarderState)
+
+	return
+}
+
+func (session *Session) GetMentionForwarderState(roomId mxid.RoomID, userId mxid.UserID) (result *MentionForwarderState) {
+	key := MentionForwarderStateKey{RoomId: roomId, UserId: userId}
+	result, ok := session.MentionForwardersState[key]
+	if ok {
+		return
+	}
+
+	result = &MentionForwarderState{}
+	session.MentionForwardersState[key] = result
 
 	return
 }
@@ -140,10 +193,7 @@ func (session *Session) handleMessage(source mautrix.EventSource, evt *mxevent.E
 		"msgno":    session.MessageCounter,
 	})
 
-	message := evt.Content.Raw["body"].(string)
-	logger.Debugf("Message: %v", message)
-
-	session.Respond(logger, evt.RoomID, message)
+	session.Respond(logger, evt.RoomID, evt.Content.AsMessage())
 
 	if err := session.Client.MarkRead(evt.RoomID, evt.ID); err != nil {
 		logger.Errorf("Failed to mark as read: %s", err.Error())

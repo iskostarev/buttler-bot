@@ -8,6 +8,9 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	mapset "github.com/deckarep/golang-set/v2"
+
+	mxevent "maunium.net/go/mautrix/event"
 	mxid "maunium.net/go/mautrix/id"
 )
 
@@ -142,13 +145,71 @@ func (session *Session) respondToTimezoneHints(logger logrus.FieldLogger, roomId
 	}
 }
 
-func (session *Session) Respond(logger logrus.FieldLogger, roomId mxid.RoomID, message string) {
+func (session *Session) mentionsToForward(roomId mxid.RoomID, message *mxevent.MessageEventContent) (result []mxid.UserID) {
+	resultSet := mapset.NewThreadUnsafeSet[mxid.UserID]()
+	for _, userId := range message.Mentions.UserIDs {
+		_, ok := session.MentionForwards[userId]
+		if ok {
+			resultSet.Add(userId)
+		}
+	}
+
+	for userId, mf := range session.MentionForwards {
+		if mf.Regex.MatchString(message.Body) {
+			resultSet.Add(userId)
+		}
+	}
+
+	resultSet.Each(func(userId mxid.UserID) bool {
+
+		state := session.GetMentionForwarderState(roomId, userId)
+		if time.Since(state.LastMentionTime) > session.MentionForwardCooldown {
+			result = append(result, userId)
+		}
+
+		return false
+	})
+
+	return
+}
+
+func (session *Session) forwardMention(logger logrus.FieldLogger, roomId mxid.RoomID, userId mxid.UserID, messageBody string) error {
+	logger.Debugf("Forwarding message %v from room %s to user %s...", messageBody, roomId, userId)
+
+	//TODO
+
+	return nil
+}
+
+func (session *Session) respondToMentions(logger logrus.FieldLogger, roomId mxid.RoomID, message *mxevent.MessageEventContent) {
+	reports := []string{}
+	for _, userId := range session.mentionsToForward(roomId, message) {
+		err := session.forwardMention(logger, roomId, userId, message.Body)
+		if err != nil {
+			logger.Warningf("Failed to forward mention for user %s from room %s: %v", userId, roomId, err)
+			reports = append(reports, fmt.Sprintf("Failed to forward mention for user %s: %v", userId, err))
+		} else {
+			state := session.GetMentionForwarderState(roomId, userId)
+			state.LastMentionTime = time.Now()
+		}
+	}
+
+	if len(reports) > 0 {
+		reportString := strings.Join(reports, "\n")
+		session.RespondMessage(logger, roomId, NewBasicTextMessage(reportString))
+	}
+}
+
+func (session *Session) Respond(logger logrus.FieldLogger, roomId mxid.RoomID, message *mxevent.MessageEventContent) {
+	logger.Debugf("Message: %v", message.Body)
+
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Warningf("Error while responding: %v", r)
 		}
 	}()
-	session.respondToPing(logger, roomId, message)
-	session.respondToPraise(logger, roomId, message)
-	session.respondToTimezoneHints(logger, roomId, message)
+	session.respondToPing(logger, roomId, message.Body)
+	session.respondToPraise(logger, roomId, message.Body)
+	session.respondToTimezoneHints(logger, roomId, message.Body)
+	session.respondToMentions(logger, roomId, message)
 }

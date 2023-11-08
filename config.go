@@ -23,6 +23,7 @@ type Config struct {
 		PasswordPath  string
 		HomeserverUrl string
 	}
+
 	Timezones []struct {
 		Id       string
 		Timezone string
@@ -30,6 +31,12 @@ type Config struct {
 		Color    string
 	}
 	TimezoneHintCooldown int64
+
+	MentionForwards []struct {
+		UserId string
+		Regex  string
+	}
+	MentionForwardCooldown string
 }
 
 func ParseConfig() (result Config) {
@@ -42,7 +49,10 @@ func ParseConfig() (result Config) {
 		panic(errors.Wrap(err, "Failed to open configuration file"))
 	}
 
-	json.Unmarshal(configBytes, &result)
+	err = json.Unmarshal(configBytes, &result)
+	if err != nil {
+		panic(err)
+	}
 
 	return
 }
