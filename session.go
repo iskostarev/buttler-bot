@@ -209,7 +209,7 @@ func (session *Session) handleMessage(source mautrix.EventSource, evt *mxevent.E
 		"msgno":    session.MessageCounter,
 	})
 
-	session.Respond(logger, evt.RoomID, evt.Content.AsMessage())
+	session.Respond(logger, evt.ID, evt.RoomID, evt.Content.AsMessage())
 
 	if err := session.Client.MarkRead(evt.RoomID, evt.ID); err != nil {
 		logger.Errorf("Failed to mark as read: %s", err.Error())
