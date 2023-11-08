@@ -133,9 +133,12 @@ func InitSession(config *Config) (session Session, err error) {
 			return session, fmt.Errorf("Repeating UserId %s in MentionForwards", userId)
 		}
 
-		regex, err := regexp.Compile(mfEntry.Regex)
-		if err != nil {
-			return session, nil
+		var regex *regexp.Regexp
+		if mfEntry.Regex != "" {
+			regex, err = regexp.Compile(mfEntry.Regex)
+			if err != nil {
+				return session, err
+			}
 		}
 
 		session.MentionForwards[userId] = MentionForward{Regex: regex}

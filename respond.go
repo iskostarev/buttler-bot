@@ -155,13 +155,12 @@ func (session *Session) mentionsToForward(roomId mxid.RoomID, message *mxevent.M
 	}
 
 	for userId, mf := range session.MentionForwards {
-		if mf.Regex.MatchString(message.Body) {
+		if mf.Regex != nil && mf.Regex.MatchString(message.Body) {
 			resultSet.Add(userId)
 		}
 	}
 
 	resultSet.Each(func(userId mxid.UserID) bool {
-
 		state := session.GetMentionForwarderState(roomId, userId)
 		if time.Since(state.LastMentionTime) > session.MentionForwardCooldown {
 			result = append(result, userId)
