@@ -47,17 +47,17 @@ func convertTimezone(strTime string, sourceTz, targetTz *time.Location, targetId
 
 func (session *Session) respondToPing(logger logrus.FieldLogger, roomId mxid.RoomID, message string) {
 	if message == "!buttler ping" {
-		session.RespondMessage(logger, roomId, NewBasicTextMessage("Pong!"))
+		session.SendMessage(logger, roomId, NewBasicTextMessage("Pong!"))
 	}
 }
 
 func (session *Session) respondToPraise(logger logrus.FieldLogger, roomId mxid.RoomID, message string) {
 	message = strings.ToLower(message)
 	if strings.HasPrefix(message, "good bot") {
-		session.RespondMessage(logger, roomId, NewBasicTextMessage(":)"))
+		session.SendMessage(logger, roomId, NewBasicTextMessage(":)"))
 	}
 	if strings.HasPrefix(message, "bad bot") {
-		session.RespondMessage(logger, roomId, NewBasicTextMessage(":("))
+		session.SendMessage(logger, roomId, NewBasicTextMessage(":("))
 	}
 }
 
@@ -138,7 +138,7 @@ func (session *Session) respondToTimezoneHints(logger logrus.FieldLogger, roomId
 		}
 	}
 
-	if session.RespondMessage(logger, roomId, NewHtmlTextMessage(responseHtml, responsePlain)) {
+	if session.SendMessage(logger, roomId, NewHtmlTextMessage(responseHtml, responsePlain)) != nil {
 		for _, curHint := range requiredHints {
 			session.updateTimezoneHintCooldown(roomId, curHint.time, curHint.tzid)
 		}
@@ -176,9 +176,20 @@ func (session *Session) mentionsToForward(roomId mxid.RoomID, message *mxevent.M
 func (session *Session) forwardMention(logger logrus.FieldLogger, roomId mxid.RoomID, userId mxid.UserID, messageBody string) error {
 	logger.Debugf("Forwarding message %v from room %s to user %s...", messageBody, roomId, userId)
 
-	//TODO
+	directRoomId, err := session.FindDirectMessageRoom(logger, userId)
+	if err != nil {
+		return err
+	}
 
-	return nil
+	if directRoomId == roomId {
+		logger.Debugf("Ignoring mention in direct room %s with user %s", roomId, userId)
+		return nil
+	}
+
+	//TODO: formatting
+	forwardedMessage := NewBasicTextMessage(fmt.Sprintf("fwd: %s", messageBody))
+
+	return session.SendMessage(logger, directRoomId, forwardedMessage)
 }
 
 func (session *Session) respondToMentions(logger logrus.FieldLogger, roomId mxid.RoomID, message *mxevent.MessageEventContent) {
@@ -196,7 +207,7 @@ func (session *Session) respondToMentions(logger logrus.FieldLogger, roomId mxid
 
 	if len(reports) > 0 {
 		reportString := strings.Join(reports, "\n")
-		session.RespondMessage(logger, roomId, NewBasicTextMessage(reportString))
+		session.SendMessage(logger, roomId, NewBasicTextMessage(reportString))
 	}
 }
 

@@ -167,12 +167,28 @@ func (session *Session) GetMentionForwarderState(roomId mxid.RoomID, userId mxid
 	return
 }
 
-func (session *Session) RespondMessage(logger logrus.FieldLogger, roomId mxid.RoomID, message Message) bool {
+func (session *Session) SendMessage(logger logrus.FieldLogger, roomId mxid.RoomID, message Message) error {
 	if _, err := session.Client.SendMessageEvent(roomId, mxevent.EventMessage, message.AsEvent()); err != nil {
 		logger.Errorf("Failed to respond: %s", err.Error())
-		return false
+		return err
 	}
-	return true
+	return nil
+}
+
+func (session *Session) FindDirectMessageRoom(logger logrus.FieldLogger, userId mxid.UserID) (roomId mxid.RoomID, err error) {
+	direct := mxevent.DirectChatsEventContent{}
+	if err = session.Client.GetAccountData("m.direct", &direct); err != nil {
+		return
+	}
+
+	directRooms := direct[userId]
+	if directRooms == nil || len(directRooms) == 0 {
+		err = errors.New("No direct message room is open")
+		return
+	}
+
+	roomId = directRooms[0]
+	return
 }
 
 func (session *Session) handleMessage(source mautrix.EventSource, evt *mxevent.Event) {
@@ -213,6 +229,15 @@ func (session *Session) handleMembership(source mautrix.EventSource, evt *mxeven
 	}
 
 	logrus.Infof("Joined room %s", evt.RoomID)
+
+	if emem.IsDirect {
+		err := session.Client.SetAccountData("m.direct", &mxevent.DirectChatsEventContent{evt.Sender: []mxid.RoomID{evt.RoomID}})
+		if err != nil {
+			logrus.Errorf("Failed to mark room %s (with user %s) as direct", evt.RoomID, evt.Sender)
+		} else {
+			logrus.Infof("Marked room %s (with user %s) as direct", evt.RoomID, evt.Sender)
+		}
+	}
 }
 
 func (session *Session) RunSyncLoop() {
