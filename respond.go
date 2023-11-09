@@ -148,10 +148,12 @@ func (session *Session) respondToTimezoneHints(logger logrus.FieldLogger, roomId
 
 func (session *Session) mentionsToForward(roomId mxid.RoomID, message *mxevent.MessageEventContent) (result []mxid.UserID) {
 	resultSet := mapset.NewThreadUnsafeSet[mxid.UserID]()
-	for _, userId := range message.Mentions.UserIDs {
-		_, ok := session.MentionForwards[userId]
-		if ok {
-			resultSet.Add(userId)
+	if message.Mentions.UserIDs != nil {
+		for _, userId := range message.Mentions.UserIDs {
+			_, ok := session.MentionForwards[userId]
+			if ok {
+				resultSet.Add(userId)
+			}
 		}
 	}
 
