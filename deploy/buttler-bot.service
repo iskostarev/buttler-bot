@@ -1,0 +1,12 @@
+[Unit]
+Description=buttler-bot
+After=network.target
+
+[Service]
+Type=simple
+User=buttler
+ExecStart=/usr/local/bin/buttler-bot --config /etc/buttler/buttler-bot.conf
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
