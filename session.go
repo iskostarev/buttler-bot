@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"regexp"
@@ -95,7 +96,7 @@ func InitSession(config *Config) (session Session, err error) {
 		}
 
 		cryptoHelper.LoginAs = &reqLogin
-		err = cryptoHelper.Init()
+		err = cryptoHelper.Init(context.TODO())
 		if err != nil {
 			return session, err
 		}
@@ -103,7 +104,7 @@ func InitSession(config *Config) (session Session, err error) {
 		session.Client.Crypto = cryptoHelper
 		logrus.Infof("CryptoHelper initialized, logged in")
 	} else {
-		_, err = session.Client.Login(&reqLogin)
+		_, err = session.Client.Login(context.TODO(), &reqLogin)
 		logrus.Infof("Logged in")
 	}
 
@@ -171,7 +172,7 @@ func (session *Session) GetMentionForwarderState(roomId mxid.RoomID, userId mxid
 }
 
 func (session *Session) SendMessage(logger logrus.FieldLogger, roomId mxid.RoomID, message Message) error {
-	if _, err := session.Client.SendMessageEvent(roomId, mxevent.EventMessage, message.AsEvent()); err != nil {
+	if _, err := session.Client.SendMessageEvent(context.TODO(), roomId, mxevent.EventMessage, message.AsEvent()); err != nil {
 		logger.Errorf("Failed to respond: %s", err.Error())
 		return err
 	}
@@ -180,7 +181,7 @@ func (session *Session) SendMessage(logger logrus.FieldLogger, roomId mxid.RoomI
 
 func (session *Session) FindDirectMessageRoom(logger logrus.FieldLogger, userId mxid.UserID) (roomId mxid.RoomID, err error) {
 	direct := mxevent.DirectChatsEventContent{}
-	if err = session.Client.GetAccountData("m.direct", &direct); err != nil {
+	if err = session.Client.GetAccountData(context.TODO(), "m.direct", &direct); err != nil {
 		return
 	}
 
@@ -194,7 +195,7 @@ func (session *Session) FindDirectMessageRoom(logger logrus.FieldLogger, userId 
 	return
 }
 
-func (session *Session) handleMessage(source mautrix.EventSource, evt *mxevent.Event) {
+func (session *Session) handleMessage(ctx context.Context, evt *mxevent.Event) {
 	session.MessageCounter++
 
 	if evt.Sender == session.Client.UserID {
@@ -214,18 +215,18 @@ func (session *Session) handleMessage(source mautrix.EventSource, evt *mxevent.E
 
 	session.Respond(logger, evt.ID, evt.RoomID, evt.Content.AsMessage())
 
-	if err := session.Client.MarkRead(evt.RoomID, evt.ID); err != nil {
+	if err := session.Client.MarkRead(context.TODO(), evt.RoomID, evt.ID); err != nil {
 		logger.Errorf("Failed to mark as read: %s", err.Error())
 	}
 }
 
-func (session *Session) handleMembership(source mautrix.EventSource, evt *mxevent.Event) {
+func (session *Session) handleMembership(ctx context.Context, evt *mxevent.Event) {
 	emem := evt.Content.AsMember()
 	if emem.Membership != mxevent.MembershipInvite {
 		return
 	}
 
-	_, err := session.Client.JoinRoomByID(evt.RoomID)
+	_, err := session.Client.JoinRoomByID(context.TODO(), evt.RoomID)
 	if err != nil {
 		logrus.Errorf("Failed to join room %s: %s", evt.RoomID, err.Error())
 		return
@@ -234,7 +235,8 @@ func (session *Session) handleMembership(source mautrix.EventSource, evt *mxeven
 	logrus.Infof("Joined room %s", evt.RoomID)
 
 	if emem.IsDirect {
-		err := session.Client.SetAccountData("m.direct", &mxevent.DirectChatsEventContent{evt.Sender: []mxid.RoomID{evt.RoomID}})
+		content := &mxevent.DirectChatsEventContent{evt.Sender: []mxid.RoomID{evt.RoomID}}
+		err := session.Client.SetAccountData(context.TODO(), "m.direct", content)
 		if err != nil {
 			logrus.Errorf("Failed to mark room %s (with user %s) as direct", evt.RoomID, evt.Sender)
 		} else {
