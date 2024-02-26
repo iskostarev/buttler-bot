@@ -11,7 +11,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 
-	_ "github.com/mattn/go-sqlite3"
+	"go.mau.fi/util/dbutil"
+	_ "modernc.org/sqlite"
 
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/crypto/cryptohelper"
@@ -90,7 +91,12 @@ func InitSession(config *Config) (session Session, err error) {
 
 	if config.Crypto.Enabled {
 		logrus.Infof("Initializing CryptoHelper...")
-		cryptoHelper, err := cryptohelper.NewCryptoHelper(session.Client, pickleKeyBytes, config.Crypto.Database)
+		db, err := dbutil.NewWithDialect(config.Crypto.Database, "sqlite")
+		if err != nil {
+			return session, err
+		}
+
+		cryptoHelper, err := cryptohelper.NewCryptoHelper(session.Client, pickleKeyBytes, db)
 		if err != nil {
 			return session, err
 		}
