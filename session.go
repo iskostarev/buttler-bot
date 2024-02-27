@@ -185,17 +185,17 @@ func (session *Session) GetMentionForwarderState(roomId mxid.RoomID, userId mxid
 	return
 }
 
-func (session *Session) SendMessage(logger logrus.FieldLogger, roomId mxid.RoomID, message Message) error {
-	if _, err := session.Client.SendMessageEvent(context.TODO(), roomId, mxevent.EventMessage, message.AsEvent()); err != nil {
+func (session *Session) SendMessage(ctx context.Context, logger logrus.FieldLogger, roomId mxid.RoomID, message Message) error {
+	if _, err := session.Client.SendMessageEvent(ctx, roomId, mxevent.EventMessage, message.AsEvent()); err != nil {
 		logger.Errorf("Failed to respond: %s", err.Error())
 		return err
 	}
 	return nil
 }
 
-func (session *Session) FindDirectMessageRoom(logger logrus.FieldLogger, userId mxid.UserID) (roomId mxid.RoomID, err error) {
+func (session *Session) FindDirectMessageRoom(ctx context.Context, logger logrus.FieldLogger, userId mxid.UserID) (roomId mxid.RoomID, err error) {
 	direct := mxevent.DirectChatsEventContent{}
-	if err = session.Client.GetAccountData(context.TODO(), "m.direct", &direct); err != nil {
+	if err = session.Client.GetAccountData(ctx, "m.direct", &direct); err != nil {
 		return
 	}
 
@@ -227,9 +227,9 @@ func (session *Session) handleMessage(ctx context.Context, evt *mxevent.Event) {
 		"msgno":    session.MessageCounter,
 	})
 
-	session.Respond(logger, evt.ID, evt.RoomID, evt.Content.AsMessage())
+	session.Respond(ctx, logger, evt.ID, evt.RoomID, evt.Content.AsMessage())
 
-	if err := session.Client.MarkRead(context.TODO(), evt.RoomID, evt.ID); err != nil {
+	if err := session.Client.MarkRead(ctx, evt.RoomID, evt.ID); err != nil {
 		logger.Errorf("Failed to mark as read: %s", err.Error())
 	}
 }

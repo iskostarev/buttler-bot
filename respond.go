@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"html/template"
 	"runtime/debug"
@@ -46,19 +47,19 @@ func convertTimezone(strTime string, sourceTz, targetTz *time.Location, targetId
 	return result
 }
 
-func (session *Session) respondToPing(logger logrus.FieldLogger, roomId mxid.RoomID, message string) {
+func (session *Session) respondToPing(ctx context.Context, logger logrus.FieldLogger, roomId mxid.RoomID, message string) {
 	if message == "!buttler ping" {
-		session.SendMessage(logger, roomId, NewBasicTextMessage("Pong!"))
+		session.SendMessage(ctx, logger, roomId, NewBasicTextMessage("Pong!"))
 	}
 }
 
-func (session *Session) respondToPraise(logger logrus.FieldLogger, roomId mxid.RoomID, message string) {
+func (session *Session) respondToPraise(ctx context.Context, logger logrus.FieldLogger, roomId mxid.RoomID, message string) {
 	message = strings.ToLower(message)
 	if strings.HasPrefix(message, "good bot") {
-		session.SendMessage(logger, roomId, NewBasicTextMessage(":)"))
+		session.SendMessage(ctx, logger, roomId, NewBasicTextMessage(":)"))
 	}
 	if strings.HasPrefix(message, "bad bot") {
-		session.SendMessage(logger, roomId, NewBasicTextMessage(":("))
+		session.SendMessage(ctx, logger, roomId, NewBasicTextMessage(":("))
 	}
 }
 
@@ -77,7 +78,7 @@ func (session *Session) updateTimezoneHintCooldown(roomId mxid.RoomID, time stri
 	session.LastTzRequests[key] = session.MessageCounter
 }
 
-func (session *Session) respondToTimezoneHints(logger logrus.FieldLogger, roomId mxid.RoomID, message string) {
+func (session *Session) respondToTimezoneHints(ctx context.Context, logger logrus.FieldLogger, roomId mxid.RoomID, message string) {
 	type hint struct {
 		time  string
 		tzid  string
@@ -139,7 +140,7 @@ func (session *Session) respondToTimezoneHints(logger logrus.FieldLogger, roomId
 		}
 	}
 
-	if session.SendMessage(logger, roomId, NewHtmlTextMessage(responseHtml, responsePlain)) != nil {
+	if session.SendMessage(ctx, logger, roomId, NewHtmlTextMessage(responseHtml, responsePlain)) != nil {
 		for _, curHint := range requiredHints {
 			session.updateTimezoneHintCooldown(roomId, curHint.time, curHint.tzid)
 		}
@@ -175,10 +176,10 @@ func (session *Session) mentionsToForward(roomId mxid.RoomID, message *mxevent.M
 	return
 }
 
-func (session *Session) forwardMention(logger logrus.FieldLogger, msgId mxid.EventID, roomId mxid.RoomID, userId mxid.UserID, message *mxevent.MessageEventContent) error {
+func (session *Session) forwardMention(ctx context.Context, logger logrus.FieldLogger, msgId mxid.EventID, roomId mxid.RoomID, userId mxid.UserID, message *mxevent.MessageEventContent) error {
 	logger.Debugf("Forwarding message %v from room %s to user %s...", message.Body, roomId, userId)
 
-	directRoomId, err := session.FindDirectMessageRoom(logger, userId)
+	directRoomId, err := session.FindDirectMessageRoom(ctx, logger, userId)
 	if err != nil {
 		return err
 	}
@@ -191,13 +192,13 @@ func (session *Session) forwardMention(logger logrus.FieldLogger, msgId mxid.Eve
 	srcRoomUri := fmt.Sprintf("https://matrix.to/#/%s/%s", roomId, msgId)
 	forwardedMessage := NewBasicTextMessage(fmt.Sprintf("%s: %s", srcRoomUri, message.Body))
 
-	return session.SendMessage(logger, directRoomId, forwardedMessage)
+	return session.SendMessage(ctx, logger, directRoomId, forwardedMessage)
 }
 
-func (session *Session) respondToMentions(logger logrus.FieldLogger, msgId mxid.EventID, roomId mxid.RoomID, message *mxevent.MessageEventContent) {
+func (session *Session) respondToMentions(ctx context.Context, logger logrus.FieldLogger, msgId mxid.EventID, roomId mxid.RoomID, message *mxevent.MessageEventContent) {
 	reports := []string{}
 	for _, userId := range session.mentionsToForward(roomId, message) {
-		err := session.forwardMention(logger, msgId, roomId, userId, message)
+		err := session.forwardMention(ctx, logger, msgId, roomId, userId, message)
 		if err != nil {
 			logger.Warningf("Failed to forward mention for user %s from room %s: %v", userId, roomId, err)
 			reports = append(reports, fmt.Sprintf("Failed to forward mention for user %s: %v", userId, err))
@@ -209,11 +210,11 @@ func (session *Session) respondToMentions(logger logrus.FieldLogger, msgId mxid.
 
 	if len(reports) > 0 {
 		reportString := strings.Join(reports, "\n")
-		session.SendMessage(logger, roomId, NewBasicTextMessage(reportString))
+		session.SendMessage(ctx, logger, roomId, NewBasicTextMessage(reportString))
 	}
 }
 
-func (session *Session) Respond(logger logrus.FieldLogger, msgId mxid.EventID, roomId mxid.RoomID, message *mxevent.MessageEventContent) {
+func (session *Session) Respond(ctx context.Context, logger logrus.FieldLogger, msgId mxid.EventID, roomId mxid.RoomID, message *mxevent.MessageEventContent) {
 	logger.Debugf("Message: %v", message.Body)
 
 	defer func() {
@@ -221,8 +222,8 @@ func (session *Session) Respond(logger logrus.FieldLogger, msgId mxid.EventID, r
 			logger.Warningf("Error while responding: %v\n%s\n", r, string(debug.Stack()))
 		}
 	}()
-	session.respondToPing(logger, roomId, message.Body)
-	session.respondToPraise(logger, roomId, message.Body)
-	session.respondToTimezoneHints(logger, roomId, message.Body)
-	session.respondToMentions(logger, msgId, roomId, message)
+	session.respondToPing(ctx, logger, roomId, message.Body)
+	session.respondToPraise(ctx, logger, roomId, message.Body)
+	session.respondToTimezoneHints(ctx, logger, roomId, message.Body)
+	session.respondToMentions(ctx, logger, msgId, roomId, message)
 }
