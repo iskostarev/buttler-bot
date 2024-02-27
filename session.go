@@ -81,6 +81,10 @@ func InitSession(config *Config) (session Session, err error) {
 	if err != nil {
 		return
 	}
+	if session.Client == nil {
+		err = errors.New("mautrix.NewClient returned nil")
+		return
+	}
 
 	reqLogin := mautrix.ReqLogin{
 		Type:             mautrix.AuthTypePassword,
@@ -111,6 +115,10 @@ func InitSession(config *Config) (session Session, err error) {
 		logrus.Infof("CryptoHelper initialized, logged in")
 	} else {
 		_, err = session.Client.Login(context.TODO(), &reqLogin)
+		if err != nil {
+			return session, err
+		}
+
 		logrus.Infof("Logged in")
 	}
 
@@ -137,7 +145,7 @@ func InitSession(config *Config) (session Session, err error) {
 
 		_, repeat := session.MentionForwards[userId]
 		if repeat {
-			return session, fmt.Errorf("Repeating UserId %s in MentionForwards", userId)
+			return session, fmt.Errorf("repeating UserId %s in MentionForwards", userId)
 		}
 
 		var regex *regexp.Regexp
@@ -192,8 +200,8 @@ func (session *Session) FindDirectMessageRoom(logger logrus.FieldLogger, userId 
 	}
 
 	directRooms := direct[userId]
-	if directRooms == nil || len(directRooms) == 0 {
-		err = errors.New("No direct message room is open")
+	if len(directRooms) == 0 {
+		err = errors.New("no direct message room is open")
 		return
 	}
 

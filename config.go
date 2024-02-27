@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
-	"io/ioutil"
+	"os"
 
 	"github.com/pkg/errors"
 )
@@ -44,7 +44,7 @@ func ParseConfig() (result Config) {
 
 	flag.Parse()
 
-	configBytes, err := ioutil.ReadFile(*configFile)
+	configBytes, err := os.ReadFile(*configFile)
 	if err != nil {
 		panic(errors.Wrap(err, "Failed to open configuration file"))
 	}
