@@ -504,6 +504,17 @@ func (s *stmt) exec(ctx context.Context, args []driver.NamedValue) (r driver.Res
 	}
 
 	defer func() {
+		if pstmt != 0 {
+			// ensure stmt finalized.
+			e := s.c.finalize(pstmt)
+
+			if err == nil && e != nil {
+				// prioritize original
+				// returned error.
+				err = e
+			}
+		}
+
 		if ctx != nil && atomic.LoadInt32(&done) != 0 {
 			r, err = nil, ctx.Err()
 		}
@@ -553,7 +564,12 @@ func (s *stmt) exec(ctx context.Context, args []driver.NamedValue) (r driver.Res
 			return nil
 		}()
 
-		if e := s.c.finalize(pstmt); e != nil && err == nil {
+		e := s.c.finalize(pstmt)
+		pstmt = 0 // done with
+
+		if err == nil && e != nil {
+			// prioritize original
+			// returned error.
 			err = e
 		}
 
@@ -603,6 +619,17 @@ func (s *stmt) query(ctx context.Context, args []driver.NamedValue) (r driver.Ro
 	var allocs []uintptr
 
 	defer func() {
+		if pstmt != 0 {
+			// ensure stmt finalized.
+			e := s.c.finalize(pstmt)
+
+			if err == nil && e != nil {
+				// prioritize original
+				// returned error.
+				err = e
+			}
+		}
+
 		if ctx != nil && atomic.LoadInt32(&done) != 0 {
 			r, err = nil, ctx.Err()
 		} else if r == nil && err == nil {
@@ -673,7 +700,13 @@ func (s *stmt) query(ctx context.Context, args []driver.NamedValue) (r driver.Ro
 			}
 			return nil
 		}()
-		if e := s.c.finalize(pstmt); e != nil && err == nil {
+
+		e := s.c.finalize(pstmt)
+		pstmt = 0 // done with
+
+		if err == nil && e != nil {
+			// prioritize original
+			// returned error.
 			err = e
 		}
 
@@ -1163,32 +1196,6 @@ func (c *conn) bindText(pstmt uintptr, idx1 int, value string) (uintptr, error) 
 	}
 
 	if rc := sqlite3.Xsqlite3_bind_text(c.tls, pstmt, int32(idx1), p, int32(len(value)), 0); rc != sqlite3.SQLITE_OK {
-		c.free(p)
-		return 0, c.errstr(rc)
-	}
-
-	return p, nil
-}
-
-// C documentation
-//
-//	int sqlite3_bind_blob(sqlite3_stmt*, int, const void*, int n, void(*)(void*));
-func (c *conn) bindBlob(pstmt uintptr, idx1 int, value []byte) (uintptr, error) {
-	if value != nil && len(value) == 0 {
-		if rc := sqlite3.Xsqlite3_bind_zeroblob(c.tls, pstmt, int32(idx1), 0); rc != sqlite3.SQLITE_OK {
-			return 0, c.errstr(rc)
-		}
-		return 0, nil
-	}
-
-	p, err := c.malloc(len(value))
-	if err != nil {
-		return 0, err
-	}
-	if len(value) != 0 {
-		copy((*libc.RawMem)(unsafe.Pointer(p))[:len(value):len(value)], value)
-	}
-	if rc := sqlite3.Xsqlite3_bind_blob(c.tls, pstmt, int32(idx1), p, int32(len(value)), 0); rc != sqlite3.SQLITE_OK {
 		c.free(p)
 		return 0, c.errstr(rc)
 	}
@@ -1869,6 +1876,21 @@ func (b *Backup) Finish() error {
 type ExecQuerierContext interface {
 	driver.ExecerContext
 	driver.QueryerContext
+}
+
+// Commit releases all resources associated with the Backup object but does not
+// close the destination database connection.
+//
+// The destination database connection is returned to the caller or an error if raised.
+// It is the responsibility of the caller to handle the connection closure.
+func (b *Backup) Commit() (driver.Conn, error) {
+	rc := sqlite3.Xsqlite3_backup_finish(b.srcConn.tls, b.pBackup)
+
+	if rc == sqlite3.SQLITE_OK {
+		return b.dstConn, nil
+	} else {
+		return nil, b.srcConn.errstr(rc)
+	}
 }
 
 // ConnectionHookFn function type for a connection hook on the Driver. Connection

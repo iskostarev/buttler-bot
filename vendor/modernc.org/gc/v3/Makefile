@@ -14,6 +14,7 @@ build_all_targets:
 	GOOS=linux GOARCH=amd64 go test -c -o /dev/null
 	GOOS=linux GOARCH=arm go test -c -o /dev/null
 	GOOS=linux GOARCH=arm64 go test -c -o /dev/null
+	GOOS=linux GOARCH=loong64 go test -c -o /dev/null
 	GOOS=linux GOARCH=ppc64le go test -c -o /dev/null
 	GOOS=linux GOARCH=riscv64 go test -c -o /dev/null
 	GOOS=linux GOARCH=s390x go test -c -o /dev/null
