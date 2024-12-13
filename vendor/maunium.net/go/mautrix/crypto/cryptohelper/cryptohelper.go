@@ -38,6 +38,9 @@ type CryptoHelper struct {
 
 	LoginAs *mautrix.ReqLogin
 
+	ASEventProcessor  crypto.ASEventProcessor
+	CustomPostDecrypt func(context.Context, *event.Event)
+
 	DBAccountID string
 }
 
@@ -58,7 +61,7 @@ func NewCryptoHelper(cli *mautrix.Client, pickleKey []byte, store any) (*CryptoH
 		return nil, fmt.Errorf("pickle key must be provided")
 	}
 	_, isExtensible := cli.Syncer.(mautrix.ExtensibleSyncer)
-	if !isExtensible {
+	if !cli.SetAppServiceDeviceID && !isExtensible {
 		return nil, fmt.Errorf("the client syncer must implement ExtensibleSyncer")
 	}
 
@@ -111,7 +114,9 @@ func (helper *CryptoHelper) Init(ctx context.Context) error {
 	}
 	syncer, ok := helper.client.Syncer.(mautrix.ExtensibleSyncer)
 	if !ok {
-		return fmt.Errorf("the client syncer must implement ExtensibleSyncer")
+		if !helper.client.SetAppServiceDeviceID {
+			return fmt.Errorf("the client syncer must implement ExtensibleSyncer")
+		}
 	}
 
 	var stateStore crypto.StateStore
@@ -136,11 +141,37 @@ func (helper *CryptoHelper) Init(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to upgrade crypto state store: %w", err)
 		}
-		storedDeviceID, err := managedCryptoStore.FindDeviceID(ctx)
+		cryptoStore = managedCryptoStore
+	} else {
+		cryptoStore = helper.unmanagedCryptoStore
+	}
+	shouldFindDeviceID := helper.LoginAs != nil || helper.unmanagedCryptoStore == nil
+	if rawCryptoStore, ok := cryptoStore.(*crypto.SQLCryptoStore); ok && shouldFindDeviceID {
+		storedDeviceID, err := rawCryptoStore.FindDeviceID(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to find existing device ID: %w", err)
 		}
-		if helper.LoginAs != nil {
+		if helper.LoginAs != nil && helper.LoginAs.Type == mautrix.AuthTypeAppservice && helper.client.SetAppServiceDeviceID {
+			if storedDeviceID == "" {
+				helper.log.Debug().
+					Str("username", helper.LoginAs.Identifier.User).
+					Msg("Logging in with appservice")
+				var resp *mautrix.RespLogin
+				resp, err = helper.client.Login(ctx, helper.LoginAs)
+				if err != nil {
+					return err
+				}
+				rawCryptoStore.DeviceID = resp.DeviceID
+				helper.client.DeviceID = resp.DeviceID
+			} else {
+				helper.log.Debug().
+					Str("username", helper.LoginAs.Identifier.User).
+					Stringer("device_id", storedDeviceID).
+					Msg("Using existing device")
+				rawCryptoStore.DeviceID = storedDeviceID
+				helper.client.DeviceID = storedDeviceID
+			}
+		} else if helper.LoginAs != nil {
 			if storedDeviceID != "" {
 				helper.LoginAs.DeviceID = storedDeviceID
 			}
@@ -154,17 +185,13 @@ func (helper *CryptoHelper) Init(ctx context.Context) error {
 				return err
 			}
 			if storedDeviceID == "" {
-				managedCryptoStore.DeviceID = helper.client.DeviceID
+				rawCryptoStore.DeviceID = helper.client.DeviceID
 			}
 		} else if storedDeviceID != "" && storedDeviceID != helper.client.DeviceID {
 			return fmt.Errorf("mismatching device ID in client and crypto store (%q != %q)", storedDeviceID, helper.client.DeviceID)
 		}
-		cryptoStore = managedCryptoStore
-	} else {
-		if helper.LoginAs != nil {
-			return fmt.Errorf("LoginAs can only be used with a managed crypto store")
-		}
-		cryptoStore = helper.unmanagedCryptoStore
+	} else if helper.LoginAs != nil {
+		return fmt.Errorf("LoginAs can only be used with a managed crypto store")
 	}
 	if helper.client.DeviceID == "" || helper.client.UserID == "" {
 		return fmt.Errorf("the client must be logged in")
@@ -177,16 +204,29 @@ func (helper *CryptoHelper) Init(ctx context.Context) error {
 		return err
 	}
 
-	syncer.OnSync(helper.mach.ProcessSyncResponse)
-	syncer.OnEventType(event.StateMember, helper.mach.HandleMemberEvent)
-	if _, ok = helper.client.Syncer.(mautrix.DispatchableSyncer); ok {
-		syncer.OnEventType(event.EventEncrypted, helper.HandleEncrypted)
-	} else {
-		helper.log.Warn().Msg("Client syncer does not implement DispatchableSyncer. Events will not be decrypted automatically.")
+	if syncer != nil {
+		syncer.OnSync(helper.mach.ProcessSyncResponse)
+		syncer.OnEventType(event.StateMember, helper.mach.HandleMemberEvent)
+		if _, ok = helper.client.Syncer.(mautrix.DispatchableSyncer); ok {
+			syncer.OnEventType(event.EventEncrypted, helper.HandleEncrypted)
+		} else {
+			helper.log.Warn().Msg("Client syncer does not implement DispatchableSyncer. Events will not be decrypted automatically.")
+		}
+		if helper.managedStateStore != nil {
+			syncer.OnEvent(helper.client.StateStoreSyncHandler)
+		}
+	} else if helper.ASEventProcessor != nil {
+		helper.mach.AddAppserviceListener(helper.ASEventProcessor)
+		helper.ASEventProcessor.On(event.EventEncrypted, helper.HandleEncrypted)
 	}
-	if helper.managedStateStore != nil {
-		syncer.OnEvent(helper.client.StateStoreSyncHandler)
+
+	if helper.client.SetAppServiceDeviceID {
+		err = helper.mach.ShareKeys(ctx, -1)
+		if err != nil {
+			return fmt.Errorf("failed to share keys: %w", err)
+		}
 	}
+
 	return nil
 }
 
@@ -281,7 +321,13 @@ func (helper *CryptoHelper) HandleEncrypted(ctx context.Context, evt *event.Even
 
 func (helper *CryptoHelper) postDecrypt(ctx context.Context, decrypted *event.Event) {
 	decrypted.Mautrix.EventSource |= event.SourceDecrypted
-	helper.client.Syncer.(mautrix.DispatchableSyncer).Dispatch(ctx, decrypted)
+	if helper.CustomPostDecrypt != nil {
+		helper.CustomPostDecrypt(ctx, decrypted)
+	} else if helper.ASEventProcessor != nil {
+		helper.ASEventProcessor.Dispatch(ctx, decrypted)
+	} else {
+		helper.client.Syncer.(mautrix.DispatchableSyncer).Dispatch(ctx, decrypted)
+	}
 }
 
 func (helper *CryptoHelper) RequestSession(ctx context.Context, roomID id.RoomID, senderKey id.SenderKey, sessionID id.SessionID, userID id.UserID, deviceID id.DeviceID) {
@@ -351,12 +397,16 @@ func (helper *CryptoHelper) Decrypt(ctx context.Context, evt *event.Event) (*eve
 }
 
 func (helper *CryptoHelper) Encrypt(ctx context.Context, roomID id.RoomID, evtType event.Type, content any) (encrypted *event.EncryptedEventContent, err error) {
+	return helper.EncryptWithStateKey(ctx, roomID, evtType, nil, content)
+}
+
+func (helper *CryptoHelper) EncryptWithStateKey(ctx context.Context, roomID id.RoomID, evtType event.Type, stateKey *string, content any) (encrypted *event.EncryptedEventContent, err error) {
 	if helper == nil {
 		return nil, fmt.Errorf("crypto helper is nil")
 	}
 	helper.lock.RLock()
 	defer helper.lock.RUnlock()
-	encrypted, err = helper.mach.EncryptMegolmEvent(ctx, roomID, evtType, content)
+	encrypted, err = helper.mach.EncryptMegolmEventWithStateKey(ctx, roomID, evtType, stateKey, content)
 	if err != nil {
 		if !errors.Is(err, crypto.SessionExpired) && err != crypto.NoGroupSession && !errors.Is(err, crypto.SessionNotShared) {
 			return
@@ -371,7 +421,7 @@ func (helper *CryptoHelper) Encrypt(ctx context.Context, roomID id.RoomID, evtTy
 			err = fmt.Errorf("failed to get room member list: %w", err)
 		} else if err = helper.mach.ShareGroupSession(ctx, roomID, users); err != nil {
 			err = fmt.Errorf("failed to share group session: %w", err)
-		} else if encrypted, err = helper.mach.EncryptMegolmEvent(ctx, roomID, evtType, content); err != nil {
+		} else if encrypted, err = helper.mach.EncryptMegolmEventWithStateKey(ctx, roomID, evtType, stateKey, content); err != nil {
 			err = fmt.Errorf("failed to encrypt event after re-sharing group session: %w", err)
 		}
 	}

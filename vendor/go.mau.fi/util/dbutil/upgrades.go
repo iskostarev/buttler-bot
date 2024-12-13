@@ -21,13 +21,21 @@ type upgrade struct {
 
 	upgradesTo    int
 	compatVersion int
-	transaction   bool
+	transaction   TxnMode
+}
+
+func (u *upgrade) DangerouslyRun(ctx context.Context, db *Database) (upgradesTo, compat int, err error) {
+	return u.upgradesTo, u.compatVersion, u.fn(ctx, db)
 }
 
 var ErrUnsupportedDatabaseVersion = errors.New("unsupported database schema version")
 var ErrForeignTables = errors.New("the database contains foreign tables")
 var ErrNotOwned = errors.New("the database is owned by")
 var ErrUnsupportedDialect = errors.New("unsupported database dialect")
+
+func DangerousInternalUpgradeVersionTable(ctx context.Context, db *Database) error {
+	return db.upgradeVersionTable(ctx)
+}
 
 func (db *Database) upgradeVersionTable(ctx context.Context) error {
 	if compatColumnExists, err := db.ColumnExists(ctx, db.VersionTable, "compat"); err != nil {
@@ -102,14 +110,6 @@ func (db *Database) ColumnExists(ctx context.Context, table, column string) (exi
 	return
 }
 
-func (db *Database) tableExistsNoError(ctx context.Context, table string) bool {
-	exists, err := db.TableExists(ctx, table)
-	if err != nil {
-		panic(fmt.Errorf("failed to check if table exists: %w", err))
-	}
-	return exists
-}
-
 const createOwnerTable = `
 CREATE TABLE IF NOT EXISTS database_owner (
 	key   INTEGER PRIMARY KEY DEFAULT 0,
@@ -120,9 +120,13 @@ CREATE TABLE IF NOT EXISTS database_owner (
 func (db *Database) checkDatabaseOwner(ctx context.Context) error {
 	var owner string
 	if !db.IgnoreForeignTables {
-		if db.tableExistsNoError(ctx, "state_groups_state") {
+		if exists, err := db.TableExists(ctx, "state_groups_state"); err != nil {
+			return fmt.Errorf("failed to check if state_groups_state exists: %w", err)
+		} else if exists {
 			return fmt.Errorf("%w (found state_groups_state, likely belonging to Synapse)", ErrForeignTables)
-		} else if db.tableExistsNoError(ctx, "roomserver_rooms") {
+		} else if exists, err = db.TableExists(ctx, "roomserver_rooms"); err != nil {
+			return fmt.Errorf("failed to check if roomserver_rooms exists: %w", err)
+		} else if exists {
 			return fmt.Errorf("%w (found roomserver_rooms, likely belonging to Dendrite)", ErrForeignTables)
 		}
 	}
@@ -151,6 +155,37 @@ func (db *Database) setVersion(ctx context.Context, version, compat int) error {
 	}
 	_, err = db.Exec(ctx, fmt.Sprintf("INSERT INTO %s (version, compat) VALUES ($1, $2)", db.VersionTable), version, compat)
 	return err
+}
+
+func (db *Database) DoSQLiteTransactionWithoutForeignKeys(ctx context.Context, doUpgrade func(context.Context) error) error {
+	conn, err := db.AcquireConn(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to acquire connection: %w", err)
+	}
+	_, err = conn.ExecContext(ctx, "PRAGMA foreign_keys=OFF")
+	if err != nil {
+		return fmt.Errorf("failed to disable foreign keys: %w", err)
+	}
+	err = db.DoTxn(ctx, &TxnOptions{Conn: conn}, func(ctx context.Context) error {
+		err := doUpgrade(ctx)
+		if err != nil {
+			return err
+		}
+		_, err = conn.ExecContext(ctx, "PRAGMA foreign_key_check")
+		if err != nil {
+			return fmt.Errorf("failed to check foreign keys after upgrade: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		_, _ = conn.ExecContext(ctx, "PRAGMA foreign_keys=ON")
+		return err
+	}
+	_, err = conn.ExecContext(ctx, "PRAGMA foreign_keys=ON")
+	if err != nil {
+		return fmt.Errorf("failed to enable foreign keys: %w", err)
+	}
+	return nil
 }
 
 func (db *Database) Upgrade(ctx context.Context) error {
@@ -194,10 +229,18 @@ func (db *Database) Upgrade(ctx context.Context) error {
 			return nil
 		}
 		db.Log.DoUpgrade(logVersion, upgradeItem.upgradesTo, upgradeItem.message, upgradeItem.transaction)
-		if upgradeItem.transaction {
-			err = db.DoTxn(ctx, nil, doUpgrade)
-		} else {
+		switch upgradeItem.transaction {
+		case TxnModeOff:
 			err = doUpgrade(ctx)
+		case TxnModeOn:
+			err = db.DoTxn(ctx, nil, doUpgrade)
+		case TxnModeSQLiteForeignKeysOff:
+			switch db.Dialect {
+			case SQLite:
+				err = db.DoSQLiteTransactionWithoutForeignKeys(ctx, doUpgrade)
+			default:
+				err = db.DoTxn(ctx, nil, doUpgrade)
+			}
 		}
 		if err != nil {
 			return err

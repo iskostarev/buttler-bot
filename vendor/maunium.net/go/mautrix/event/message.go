@@ -8,10 +8,10 @@ package event
 
 import (
 	"encoding/json"
+	"html"
+	"slices"
 	"strconv"
 	"strings"
-
-	"golang.org/x/net/html"
 
 	"maunium.net/go/mautrix/crypto/attachment"
 	"maunium.net/go/mautrix/id"
@@ -20,6 +20,24 @@ import (
 // MessageType is the sub-type of a m.room.message event.
 // https://spec.matrix.org/v1.2/client-server-api/#mroommessage-msgtypes
 type MessageType string
+
+func (mt MessageType) IsText() bool {
+	switch mt {
+	case MsgText, MsgNotice, MsgEmote:
+		return true
+	default:
+		return false
+	}
+}
+
+func (mt MessageType) IsMedia() bool {
+	switch mt {
+	case MsgImage, MsgVideo, MsgAudio, MsgFile, MessageType(EventSticker.Type):
+		return true
+	default:
+		return false
+	}
+}
 
 // Msgtypes
 const (
@@ -112,12 +130,37 @@ type MessageEventContent struct {
 
 	replyFallbackRemoved bool
 
-	MessageSendRetry         *BeeperRetryMetadata   `json:"com.beeper.message_send_retry,omitempty"`
-	BeeperGalleryImages      []*MessageEventContent `json:"com.beeper.gallery.images,omitempty"`
-	BeeperGalleryCaption     string                 `json:"com.beeper.gallery.caption,omitempty"`
-	BeeperGalleryCaptionHTML string                 `json:"com.beeper.gallery.caption_html,omitempty"`
+	MessageSendRetry         *BeeperRetryMetadata     `json:"com.beeper.message_send_retry,omitempty"`
+	BeeperGalleryImages      []*MessageEventContent   `json:"com.beeper.gallery.images,omitempty"`
+	BeeperGalleryCaption     string                   `json:"com.beeper.gallery.caption,omitempty"`
+	BeeperGalleryCaptionHTML string                   `json:"com.beeper.gallery.caption_html,omitempty"`
+	BeeperPerMessageProfile  *BeeperPerMessageProfile `json:"com.beeper.per_message_profile,omitempty"`
 
 	BeeperLinkPreviews []*BeeperLinkPreview `json:"com.beeper.linkpreviews,omitempty"`
+
+	MSC1767Audio *MSC1767Audio `json:"org.matrix.msc1767.audio,omitempty"`
+	MSC3245Voice *MSC3245Voice `json:"org.matrix.msc3245.voice,omitempty"`
+}
+
+func (content *MessageEventContent) GetFileName() string {
+	if content.FileName != "" {
+		return content.FileName
+	}
+	return content.Body
+}
+
+func (content *MessageEventContent) GetCaption() string {
+	if content.FileName != "" && content.Body != "" && content.Body != content.FileName {
+		return content.Body
+	}
+	return ""
+}
+
+func (content *MessageEventContent) GetFormattedCaption() string {
+	if content.Format == FormatHTML && content.FormattedBody != "" {
+		return content.FormattedBody
+	}
+	return ""
 }
 
 func (content *MessageEventContent) GetRelatesTo() *RelatesTo {
@@ -189,6 +232,16 @@ func (content *MessageEventContent) GetInfo() *FileInfo {
 type Mentions struct {
 	UserIDs []id.UserID `json:"user_ids,omitempty"`
 	Room    bool        `json:"room,omitempty"`
+}
+
+func (m *Mentions) Add(userID id.UserID) {
+	if userID != "" && !slices.Contains(m.UserIDs, userID) {
+		m.UserIDs = append(m.UserIDs, userID)
+	}
+}
+
+func (m *Mentions) Has(userID id.UserID) bool {
+	return m != nil && slices.Contains(m.UserIDs, userID)
 }
 
 type EncryptedFileInfo struct {

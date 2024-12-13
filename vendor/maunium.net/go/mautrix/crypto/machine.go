@@ -11,15 +11,17 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog"
 
-	"maunium.net/go/mautrix/crypto/ssss"
-	"maunium.net/go/mautrix/id"
+	"go.mau.fi/util/exzerolog"
 
 	"maunium.net/go/mautrix"
+	"maunium.net/go/mautrix/crypto/ssss"
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/id"
 )
 
 // OlmMachine is the main struct for handling Matrix end-to-end encryption.
@@ -53,7 +55,7 @@ type OlmMachine struct {
 	keyWaitersLock sync.Mutex
 
 	// Optional callback which is called when we save a session to store
-	SessionReceived func(context.Context, id.SessionID)
+	SessionReceived func(context.Context, id.RoomID, id.SessionID, uint32)
 
 	devicesToUnwedge     map[id.IdentityKey]bool
 	devicesToUnwedgeLock sync.Mutex
@@ -64,8 +66,9 @@ type OlmMachine struct {
 	megolmEncryptLock sync.Mutex
 	megolmDecryptLock sync.Mutex
 
-	otkUploadLock sync.Mutex
-	lastOTKUpload time.Time
+	otkUploadLock       sync.Mutex
+	lastOTKUpload       time.Time
+	receivedOTKsForSelf atomic.Bool
 
 	CrossSigningKeys    *CrossSigningKeysCache
 	crossSigningPubkeys *CrossSigningPublicKeysCache
@@ -78,6 +81,7 @@ type OlmMachine struct {
 	RatchetKeysOnDecrypt         bool
 	DeleteFullyUsedKeysOnDecrypt bool
 	DeleteKeysOnDeviceDelete     bool
+	DisableRatchetTracking       bool
 
 	DisableDeviceChangeKeyRotation bool
 
@@ -206,13 +210,14 @@ func (mach *OlmMachine) OwnIdentity() *id.Device {
 	}
 }
 
-type asEventProcessor interface {
+type ASEventProcessor interface {
 	On(evtType event.Type, handler func(ctx context.Context, evt *event.Event))
 	OnOTK(func(ctx context.Context, otk *mautrix.OTKCount))
 	OnDeviceList(func(ctx context.Context, lists *mautrix.DeviceLists, since string))
+	Dispatch(ctx context.Context, evt *event.Event)
 }
 
-func (mach *OlmMachine) AddAppserviceListener(ep asEventProcessor) {
+func (mach *OlmMachine) AddAppserviceListener(ep ASEventProcessor) {
 	// ToDeviceForwardedRoomKey and ToDeviceRoomKey should only be present inside encrypted to-device events
 	ep.On(event.ToDeviceEncrypted, mach.HandleToDeviceEvent)
 	ep.On(event.ToDeviceRoomKeyRequest, mach.HandleToDeviceEvent)
@@ -242,14 +247,29 @@ func (mach *OlmMachine) HandleDeviceLists(ctx context.Context, dl *mautrix.Devic
 	}
 }
 
+func (mach *OlmMachine) otkCountIsForCrossSigningKey(otkCount *mautrix.OTKCount) bool {
+	if mach.crossSigningPubkeys == nil || otkCount.UserID != mach.Client.UserID {
+		return false
+	}
+	switch id.Ed25519(otkCount.DeviceID) {
+	case mach.crossSigningPubkeys.MasterKey, mach.crossSigningPubkeys.UserSigningKey, mach.crossSigningPubkeys.SelfSigningKey:
+		return true
+	}
+	return false
+}
+
 func (mach *OlmMachine) HandleOTKCounts(ctx context.Context, otkCount *mautrix.OTKCount) {
+	receivedOTKsForSelf := mach.receivedOTKsForSelf.Load()
 	if (len(otkCount.UserID) > 0 && otkCount.UserID != mach.Client.UserID) || (len(otkCount.DeviceID) > 0 && otkCount.DeviceID != mach.Client.DeviceID) {
-		// TODO This log probably needs to be silence-able if someone wants to use encrypted appservices with multiple e2ee sessions
-		mach.Log.Warn().
-			Str("target_user_id", otkCount.UserID.String()).
-			Str("target_device_id", otkCount.DeviceID.String()).
-			Msg("Dropping OTK counts targeted to someone else")
+		if otkCount.UserID != mach.Client.UserID || (!receivedOTKsForSelf && !mach.otkCountIsForCrossSigningKey(otkCount)) {
+			mach.Log.Warn().
+				Str("target_user_id", otkCount.UserID.String()).
+				Str("target_device_id", otkCount.DeviceID.String()).
+				Msg("Dropping OTK counts targeted to someone else")
+		}
 		return
+	} else if !receivedOTKsForSelf {
+		mach.receivedOTKsForSelf.Store(true)
 	}
 
 	minCount := mach.account.Internal.MaxNumberOfOneTimeKeys() / 2
@@ -505,25 +525,24 @@ func (mach *OlmMachine) SendEncryptedToDevice(ctx context.Context, device *id.De
 	return err
 }
 
-func (mach *OlmMachine) createGroupSession(ctx context.Context, senderKey id.SenderKey, signingKey id.Ed25519, roomID id.RoomID, sessionID id.SessionID, sessionKey string, maxAge time.Duration, maxMessages int, isScheduled bool) {
+func (mach *OlmMachine) createGroupSession(ctx context.Context, senderKey id.SenderKey, signingKey id.Ed25519, roomID id.RoomID, sessionID id.SessionID, sessionKey string, maxAge time.Duration, maxMessages int, isScheduled bool) error {
 	log := zerolog.Ctx(ctx)
 	igs, err := NewInboundGroupSession(senderKey, signingKey, roomID, sessionKey, maxAge, maxMessages, isScheduled)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to create inbound group session")
-		return
+		return fmt.Errorf("failed to create inbound group session: %w", err)
 	} else if igs.ID() != sessionID {
 		log.Warn().
 			Str("expected_session_id", sessionID.String()).
 			Str("actual_session_id", igs.ID().String()).
 			Msg("Mismatched session ID while creating inbound group session")
-		return
+		return fmt.Errorf("mismatched session ID while creating inbound group session")
 	}
-	err = mach.CryptoStore.PutGroupSession(ctx, roomID, senderKey, sessionID, igs)
+	err = mach.CryptoStore.PutGroupSession(ctx, igs)
 	if err != nil {
-		log.Error().Err(err).Str("session_id", sessionID.String()).Msg("Failed to store new inbound group session")
-		return
+		log.Err(err).Str("session_id", sessionID.String()).Msg("Failed to store new inbound group session")
+		return fmt.Errorf("failed to store new inbound group session: %w", err)
 	}
-	mach.markSessionReceived(ctx, sessionID)
+	mach.markSessionReceived(ctx, roomID, sessionID, igs.Internal.FirstKnownIndex())
 	log.Debug().
 		Str("session_id", sessionID.String()).
 		Str("sender_key", senderKey.String()).
@@ -531,11 +550,12 @@ func (mach *OlmMachine) createGroupSession(ctx context.Context, senderKey id.Sen
 		Int("max_messages", maxMessages).
 		Bool("is_scheduled", isScheduled).
 		Msg("Received inbound group session")
+	return nil
 }
 
-func (mach *OlmMachine) markSessionReceived(ctx context.Context, id id.SessionID) {
+func (mach *OlmMachine) markSessionReceived(ctx context.Context, roomID id.RoomID, id id.SessionID, firstKnownIndex uint32) {
 	if mach.SessionReceived != nil {
-		mach.SessionReceived(ctx, id)
+		mach.SessionReceived(ctx, roomID, id, firstKnownIndex)
 	}
 
 	mach.keyWaitersLock.Lock()
@@ -557,7 +577,7 @@ func (mach *OlmMachine) WaitForSession(ctx context.Context, roomID id.RoomID, se
 	}
 	mach.keyWaitersLock.Unlock()
 	// Handle race conditions where a session appears between the failed decryption and WaitForSession call.
-	sess, err := mach.CryptoStore.GetGroupSession(ctx, roomID, senderKey, sessionID)
+	sess, err := mach.CryptoStore.GetGroupSession(ctx, roomID, sessionID)
 	if sess != nil || errors.Is(err, ErrGroupSessionWithheld) {
 		return true
 	}
@@ -565,21 +585,13 @@ func (mach *OlmMachine) WaitForSession(ctx context.Context, roomID id.RoomID, se
 	case <-ch:
 		return true
 	case <-time.After(timeout):
-		sess, err = mach.CryptoStore.GetGroupSession(ctx, roomID, senderKey, sessionID)
+		sess, err = mach.CryptoStore.GetGroupSession(ctx, roomID, sessionID)
 		// Check if the session somehow appeared in the store without telling us
 		// We accept withheld sessions as received, as then the decryption attempt will show the error.
 		return sess != nil || errors.Is(err, ErrGroupSessionWithheld)
 	case <-ctx.Done():
 		return false
 	}
-}
-
-func stringifyArray[T ~string](arr []T) []string {
-	strs := make([]string, len(arr))
-	for i, v := range arr {
-		strs[i] = string(v)
-	}
-	return strs
 }
 
 func (mach *OlmMachine) receiveRoomKey(ctx context.Context, evt *DecryptedOlmEvent, content *event.RoomKeyEventContent) {
@@ -622,11 +634,14 @@ func (mach *OlmMachine) receiveRoomKey(ctx context.Context, evt *DecryptedOlmEve
 			log.Err(err).Msg("Failed to redact previous megolm sessions")
 		} else {
 			log.Info().
-				Strs("session_ids", stringifyArray(sessionIDs)).
+				Array("session_ids", exzerolog.ArrayOfStrs(sessionIDs)).
 				Msg("Redacted previous megolm sessions")
 		}
 	}
-	mach.createGroupSession(ctx, evt.SenderKey, evt.Keys.Ed25519, content.RoomID, content.SessionID, content.SessionKey, maxAge, maxMessages, content.IsScheduled)
+	err = mach.createGroupSession(ctx, evt.SenderKey, evt.Keys.Ed25519, content.RoomID, content.SessionID, content.SessionKey, maxAge, maxMessages, content.IsScheduled)
+	if err != nil {
+		log.Err(err).Msg("Failed to create inbound group session")
+	}
 }
 
 func (mach *OlmMachine) HandleRoomKeyWithheld(ctx context.Context, content *event.RoomKeyWithheldEventContent) {
@@ -634,6 +649,7 @@ func (mach *OlmMachine) HandleRoomKeyWithheld(ctx context.Context, content *even
 		zerolog.Ctx(ctx).Debug().Interface("content", content).Msg("Non-megolm room key withheld event")
 		return
 	}
+	// TODO log if there's a conflict? (currently ignored)
 	err := mach.CryptoStore.PutWithheldGroupSession(ctx, *content)
 	if err != nil {
 		zerolog.Ctx(ctx).Error().Err(err).Msg("Failed to save room key withheld event")
@@ -681,6 +697,11 @@ func (mach *OlmMachine) ShareKeys(ctx context.Context, currentOTKCount int) erro
 		log.Debug().Msg("No one-time keys nor device keys got when trying to share keys")
 		return nil
 	}
+	// Save the keys before sending the upload request in case there is a
+	// network failure.
+	if err := mach.saveAccount(ctx); err != nil {
+		return err
+	}
 	req := &mautrix.ReqUploadKeys{
 		DeviceKeys:  deviceKeys,
 		OneTimeKeys: oneTimeKeys,
@@ -691,6 +712,7 @@ func (mach *OlmMachine) ShareKeys(ctx context.Context, currentOTKCount int) erro
 		return err
 	}
 	mach.lastOTKUpload = time.Now()
+	mach.account.Internal.MarkKeysAsPublished()
 	mach.account.Shared = true
 	return mach.saveAccount(ctx)
 }
@@ -702,7 +724,7 @@ func (mach *OlmMachine) ExpiredKeyDeleteLoop(ctx context.Context) {
 		if err != nil {
 			log.Err(err).Msg("Failed to redact expired megolm sessions")
 		} else if len(sessionIDs) > 0 {
-			log.Info().Strs("session_ids", stringifyArray(sessionIDs)).Msg("Redacted expired megolm sessions")
+			log.Info().Array("session_ids", exzerolog.ArrayOfStrs(sessionIDs)).Msg("Redacted expired megolm sessions")
 		} else {
 			log.Debug().Msg("Didn't find any expired megolm sessions")
 		}

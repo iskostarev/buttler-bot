@@ -40,11 +40,23 @@ var TypeMap = map[Type]reflect.Type{
 	StateSpaceChild:        reflect.TypeOf(SpaceChildEventContent{}),
 	StateInsertionMarker:   reflect.TypeOf(InsertionMarkerContent{}),
 
+	StateLegacyPolicyRoom:     reflect.TypeOf(ModPolicyContent{}),
+	StateLegacyPolicyServer:   reflect.TypeOf(ModPolicyContent{}),
+	StateLegacyPolicyUser:     reflect.TypeOf(ModPolicyContent{}),
+	StateUnstablePolicyRoom:   reflect.TypeOf(ModPolicyContent{}),
+	StateUnstablePolicyServer: reflect.TypeOf(ModPolicyContent{}),
+	StateUnstablePolicyUser:   reflect.TypeOf(ModPolicyContent{}),
+
+	StateElementFunctionalMembers: reflect.TypeOf(ElementFunctionalMembersContent{}),
+
 	EventMessage:   reflect.TypeOf(MessageEventContent{}),
 	EventSticker:   reflect.TypeOf(MessageEventContent{}),
 	EventEncrypted: reflect.TypeOf(EncryptedEventContent{}),
 	EventRedaction: reflect.TypeOf(RedactionEventContent{}),
 	EventReaction:  reflect.TypeOf(ReactionEventContent{}),
+
+	EventUnstablePollStart:    reflect.TypeOf(PollStartEventContent{}),
+	EventUnstablePollResponse: reflect.TypeOf(PollResponseEventContent{}),
 
 	BeeperMessageStatus: reflect.TypeOf(BeeperMessageStatusEventContent{}),
 
@@ -52,6 +64,8 @@ var TypeMap = map[Type]reflect.Type{
 	AccountDataDirectChats:     reflect.TypeOf(DirectChatsEventContent{}),
 	AccountDataFullyRead:       reflect.TypeOf(FullyReadEventContent{}),
 	AccountDataIgnoredUserList: reflect.TypeOf(IgnoredUserListEventContent{}),
+	AccountDataMarkedUnread:    reflect.TypeOf(MarkedUnreadEventContent{}),
+	AccountDataBeeperMute:      reflect.TypeOf(BeeperMuteEventContent{}),
 
 	EphemeralEventTyping:   reflect.TypeOf(TypingEventContent{}),
 	EphemeralEventReceipt:  reflect.TypeOf(ReceiptEventContent{}),
@@ -174,6 +188,13 @@ func IsUnsupportedContentType(err error) bool {
 var ErrContentAlreadyParsed = errors.New("content is already parsed")
 var ErrUnsupportedContentType = errors.New("unsupported event type")
 
+func (content *Content) GetRaw() map[string]interface{} {
+	if content.Raw == nil {
+		content.Raw = make(map[string]interface{})
+	}
+	return content.Raw
+}
+
 func (content *Content) ParseRaw(evtType Type) error {
 	if content.Parsed != nil {
 		return ErrContentAlreadyParsed
@@ -211,6 +232,7 @@ func init() {
 	gob.Register(&BridgeEventContent{})
 	gob.Register(&SpaceChildEventContent{})
 	gob.Register(&SpaceParentEventContent{})
+	gob.Register(&ElementFunctionalMembersContent{})
 	gob.Register(&RoomNameEventContent{})
 	gob.Register(&RoomAvatarEventContent{})
 	gob.Register(&TopicEventContent{})
@@ -236,6 +258,15 @@ func init() {
 	gob.Register(&ForwardedRoomKeyEventContent{})
 	gob.Register(&RoomKeyRequestEventContent{})
 	gob.Register(&RoomKeyWithheldEventContent{})
+}
+
+func CastOrDefault[T any](content *Content) *T {
+	casted, ok := content.Parsed.(*T)
+	if ok {
+		return casted
+	}
+	casted2, _ := content.Parsed.(T)
+	return &casted2
 }
 
 // Helper cast functions below
@@ -352,6 +383,13 @@ func (content *Content) AsSpaceParent() *SpaceParentEventContent {
 	}
 	return casted
 }
+func (content *Content) AsElementFunctionalMembers() *ElementFunctionalMembersContent {
+	casted, ok := content.Parsed.(*ElementFunctionalMembersContent)
+	if !ok {
+		return &ElementFunctionalMembersContent{}
+	}
+	return casted
+}
 func (content *Content) AsMessage() *MessageEventContent {
 	casted, ok := content.Parsed.(*MessageEventContent)
 	if !ok {
@@ -405,6 +443,13 @@ func (content *Content) AsIgnoredUserList() *IgnoredUserListEventContent {
 	casted, ok := content.Parsed.(*IgnoredUserListEventContent)
 	if !ok {
 		return &IgnoredUserListEventContent{}
+	}
+	return casted
+}
+func (content *Content) AsMarkedUnread() *MarkedUnreadEventContent {
+	casted, ok := content.Parsed.(*MarkedUnreadEventContent)
+	if !ok {
+		return &MarkedUnreadEventContent{}
 	}
 	return casted
 }

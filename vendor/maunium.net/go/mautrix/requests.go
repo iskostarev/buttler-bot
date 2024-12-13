@@ -83,6 +83,7 @@ type ReqLogin struct {
 	Token                    string         `json:"token,omitempty"`
 	DeviceID                 id.DeviceID    `json:"device_id,omitempty"`
 	InitialDeviceDisplayName string         `json:"initial_device_display_name,omitempty"`
+	RefreshToken             bool           `json:"refresh_token,omitempty"`
 
 	// Whether or not the returned credentials should be stored in the Client
 	StoreCredentials bool `json:"-"`
@@ -118,8 +119,12 @@ type ReqCreateRoom struct {
 
 	PowerLevelOverride *event.PowerLevelsEventContent `json:"power_level_content_override,omitempty"`
 
-	MeowRoomID            id.RoomID `json:"fi.mau.room_id,omitempty"`
-	BeeperAutoJoinInvites bool      `json:"com.beeper.auto_join_invites,omitempty"`
+	MeowRoomID            id.RoomID   `json:"fi.mau.room_id,omitempty"`
+	BeeperInitialMembers  []id.UserID `json:"com.beeper.initial_members,omitempty"`
+	BeeperAutoJoinInvites bool        `json:"com.beeper.auto_join_invites,omitempty"`
+	BeeperLocalRoomID     id.RoomID   `json:"com.beeper.local_room_id,omitempty"`
+	BeeperBridgeName      string      `json:"com.beeper.bridge_name,omitempty"`
+	BeeperBridgeAccountID string      `json:"com.beeper.bridge_account_id,omitempty"`
 }
 
 // ReqRedact is the JSON request for https://spec.matrix.org/v1.2/client-server-api/#put_matrixclientv3roomsroomidredacteventidtxnid
@@ -223,7 +228,7 @@ func (otk *OneTimeKey) MarshalJSON() ([]byte, error) {
 
 type ReqUploadKeys struct {
 	DeviceKeys  *DeviceKeys             `json:"device_keys,omitempty"`
-	OneTimeKeys map[id.KeyID]OneTimeKey `json:"one_time_keys"`
+	OneTimeKeys map[id.KeyID]OneTimeKey `json:"one_time_keys,omitempty"`
 }
 
 type ReqKeysSignatures struct {
@@ -363,6 +368,17 @@ type ReqSetReadMarkers struct {
 	BeeperFullyReadExtra   interface{} `json:"com.beeper.fully_read.extra,omitempty"`
 }
 
+type BeeperInboxDone struct {
+	Delta   int64 `json:"at_delta"`
+	AtOrder int64 `json:"at_order"`
+}
+
+type ReqSetBeeperInboxState struct {
+	MarkedUnread *bool              `json:"marked_unread,omitempty"`
+	Done         *BeeperInboxDone   `json:"done,omitempty"`
+	ReadMarkers  *ReqSetReadMarkers `json:"read_markers,omitempty"`
+}
+
 type ReqSendReceipt struct {
 	ThreadID string `json:"thread_id,omitempty"`
 }
@@ -453,4 +469,9 @@ type ReqKeyBackupData struct {
 	ForwardedCount    int             `json:"forwarded_count"`
 	IsVerified        bool            `json:"is_verified"`
 	SessionData       json.RawMessage `json:"session_data"`
+}
+
+type ReqReport struct {
+	Reason string `json:"reason,omitempty"`
+	Score  int    `json:"score,omitempty"`
 }

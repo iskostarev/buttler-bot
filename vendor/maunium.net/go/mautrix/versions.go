@@ -19,6 +19,9 @@ type RespVersions struct {
 }
 
 func (versions *RespVersions) ContainsFunc(match func(found SpecVersion) bool) bool {
+	if versions == nil {
+		return false
+	}
 	for _, found := range versions.Versions {
 		if match(found) {
 			return true
@@ -40,6 +43,9 @@ func (versions *RespVersions) ContainsGreaterOrEqual(version SpecVersion) bool {
 }
 
 func (versions *RespVersions) GetLatest() (latest SpecVersion) {
+	if versions == nil {
+		return
+	}
 	for _, ver := range versions.Versions {
 		if ver.GreaterThan(latest) {
 			latest = ver
@@ -54,16 +60,23 @@ type UnstableFeature struct {
 }
 
 var (
-	FeatureAppservicePing = UnstableFeature{UnstableFlag: "fi.mau.msc2659.stable", SpecVersion: SpecV17}
+	FeatureAsyncUploads       = UnstableFeature{UnstableFlag: "fi.mau.msc2246.stable", SpecVersion: SpecV17}
+	FeatureAppservicePing     = UnstableFeature{UnstableFlag: "fi.mau.msc2659.stable", SpecVersion: SpecV17}
+	FeatureAuthenticatedMedia = UnstableFeature{UnstableFlag: "org.matrix.msc3916.stable", SpecVersion: SpecV111}
 
 	BeeperFeatureHungry               = UnstableFeature{UnstableFlag: "com.beeper.hungry"}
 	BeeperFeatureBatchSending         = UnstableFeature{UnstableFlag: "com.beeper.batch_sending"}
 	BeeperFeatureRoomYeeting          = UnstableFeature{UnstableFlag: "com.beeper.room_yeeting"}
 	BeeperFeatureAutojoinInvites      = UnstableFeature{UnstableFlag: "com.beeper.room_create_autojoin_invites"}
 	BeeperFeatureArbitraryProfileMeta = UnstableFeature{UnstableFlag: "com.beeper.arbitrary_profile_meta"}
+	BeeperFeatureAccountDataMute      = UnstableFeature{UnstableFlag: "com.beeper.account_data_mute"}
+	BeeperFeatureInboxState           = UnstableFeature{UnstableFlag: "com.beeper.inbox_state"}
 )
 
 func (versions *RespVersions) Supports(feature UnstableFeature) bool {
+	if versions == nil {
+		return false
+	}
 	return versions.UnstableFeatures[feature.UnstableFlag] ||
 		(!feature.SpecVersion.IsEmpty() && versions.ContainsGreaterOrEqual(feature.SpecVersion))
 }
@@ -95,6 +108,8 @@ var (
 	SpecV17  = MustParseSpecVersion("v1.7")
 	SpecV18  = MustParseSpecVersion("v1.8")
 	SpecV19  = MustParseSpecVersion("v1.9")
+	SpecV110 = MustParseSpecVersion("v1.10")
+	SpecV111 = MustParseSpecVersion("v1.11")
 )
 
 func (svf SpecVersionFormat) String() string {

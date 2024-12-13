@@ -112,11 +112,12 @@ func (et *Type) GuessClass() TypeClass {
 		StatePowerLevels.Type, StateRoomName.Type, StateRoomAvatar.Type, StateServerACL.Type, StateTopic.Type,
 		StatePinnedEvents.Type, StateTombstone.Type, StateEncryption.Type, StateBridge.Type, StateHalfShotBridge.Type,
 		StateSpaceParent.Type, StateSpaceChild.Type, StatePolicyRoom.Type, StatePolicyServer.Type, StatePolicyUser.Type,
-		StateInsertionMarker.Type:
+		StateInsertionMarker.Type, StateElementFunctionalMembers.Type:
 		return StateEventType
 	case EphemeralEventReceipt.Type, EphemeralEventTyping.Type, EphemeralEventPresence.Type:
 		return EphemeralEventType
 	case AccountDataDirectChats.Type, AccountDataPushRules.Type, AccountDataRoomTags.Type,
+		AccountDataFullyRead.Type, AccountDataIgnoredUserList.Type, AccountDataMarkedUnread.Type,
 		AccountDataSecretStorageKey.Type, AccountDataSecretStorageDefaultKey.Type,
 		AccountDataCrossSigningMaster.Type, AccountDataCrossSigningSelf.Type, AccountDataCrossSigningUser.Type,
 		AccountDataFullyRead.Type, AccountDataMegolmBackupKey.Type:
@@ -125,7 +126,7 @@ func (et *Type) GuessClass() TypeClass {
 		InRoomVerificationStart.Type, InRoomVerificationReady.Type, InRoomVerificationAccept.Type,
 		InRoomVerificationKey.Type, InRoomVerificationMAC.Type, InRoomVerificationCancel.Type,
 		CallInvite.Type, CallCandidates.Type, CallAnswer.Type, CallReject.Type, CallSelectAnswer.Type,
-		CallNegotiate.Type, CallHangup.Type, BeeperMessageStatus.Type:
+		CallNegotiate.Type, CallHangup.Type, BeeperMessageStatus.Type, EventUnstablePollStart.Type, EventUnstablePollResponse.Type:
 		return MessageEventType
 	case ToDeviceRoomKey.Type, ToDeviceRoomKeyRequest.Type, ToDeviceForwardedRoomKey.Type, ToDeviceRoomKeyWithheld.Type,
 		ToDeviceBeeperRoomKeyAck.Type:
@@ -148,7 +149,7 @@ func (et *Type) MarshalJSON() ([]byte, error) {
 	return json.Marshal(&et.Type)
 }
 
-func (et Type) UnmarshalText(data []byte) error {
+func (et *Type) UnmarshalText(data []byte) error {
 	et.Type = string(data)
 	et.Class = et.GuessClass()
 	return nil
@@ -158,11 +159,11 @@ func (et Type) MarshalText() ([]byte, error) {
 	return []byte(et.Type), nil
 }
 
-func (et *Type) String() string {
+func (et Type) String() string {
 	return et.Type
 }
 
-func (et *Type) Repr() string {
+func (et Type) Repr() string {
 	return fmt.Sprintf("%s (%s)", et.Type, et.Class.Name())
 }
 
@@ -191,8 +192,17 @@ var (
 	StateSpaceChild        = Type{"m.space.child", StateEventType}
 	StateSpaceParent       = Type{"m.space.parent", StateEventType}
 
+	StateLegacyPolicyRoom     = Type{"m.room.rule.room", StateEventType}
+	StateLegacyPolicyServer   = Type{"m.room.rule.server", StateEventType}
+	StateLegacyPolicyUser     = Type{"m.room.rule.user", StateEventType}
+	StateUnstablePolicyRoom   = Type{"org.matrix.mjolnir.rule.room", StateEventType}
+	StateUnstablePolicyServer = Type{"org.matrix.mjolnir.rule.server", StateEventType}
+	StateUnstablePolicyUser   = Type{"org.matrix.mjolnir.rule.user", StateEventType}
+
 	// Deprecated: MSC2716 has been abandoned
 	StateInsertionMarker = Type{"org.matrix.msc2716.marker", StateEventType}
+
+	StateElementFunctionalMembers = Type{"io.element.functional_members", StateEventType}
 )
 
 // Message events
@@ -222,6 +232,9 @@ var (
 	CallHangup       = Type{"m.call.hangup", MessageEventType}
 
 	BeeperMessageStatus = Type{"com.beeper.message_send_status", MessageEventType}
+
+	EventUnstablePollStart    = Type{Type: "org.matrix.msc3381.poll.start", Class: MessageEventType}
+	EventUnstablePollResponse = Type{Type: "org.matrix.msc3381.poll.response", Class: MessageEventType}
 )
 
 // Ephemeral events
@@ -238,13 +251,15 @@ var (
 	AccountDataRoomTags        = Type{"m.tag", AccountDataEventType}
 	AccountDataFullyRead       = Type{"m.fully_read", AccountDataEventType}
 	AccountDataIgnoredUserList = Type{"m.ignored_user_list", AccountDataEventType}
+	AccountDataMarkedUnread    = Type{"m.marked_unread", AccountDataEventType}
+	AccountDataBeeperMute      = Type{"com.beeper.mute", AccountDataEventType}
 
 	AccountDataSecretStorageDefaultKey = Type{"m.secret_storage.default_key", AccountDataEventType}
 	AccountDataSecretStorageKey        = Type{"m.secret_storage.key", AccountDataEventType}
 	AccountDataCrossSigningMaster      = Type{string(id.SecretXSMaster), AccountDataEventType}
 	AccountDataCrossSigningUser        = Type{string(id.SecretXSUserSigning), AccountDataEventType}
 	AccountDataCrossSigningSelf        = Type{string(id.SecretXSSelfSigning), AccountDataEventType}
-	AccountDataMegolmBackupKey         = Type{"m.megolm_backup.v1", AccountDataEventType}
+	AccountDataMegolmBackupKey         = Type{string(id.SecretMegolmBackupV1), AccountDataEventType}
 )
 
 // Device-to-device events

@@ -54,9 +54,9 @@ func (session *OlmSession) Describe() string {
 	return session.Internal.Describe()
 }
 
-func wrapSession(session *olm.Session) *OlmSession {
+func wrapSession(session olm.Session) *OlmSession {
 	return &OlmSession{
-		Internal: *session,
+		Internal: session,
 		ExpirationMixin: ExpirationMixin{
 			TimeMixin: TimeMixin{
 				CreationTime:      time.Now(),
@@ -68,7 +68,7 @@ func wrapSession(session *olm.Session) *OlmSession {
 }
 
 func (account *OlmAccount) NewInboundSessionFrom(senderKey id.Curve25519, ciphertext string) (*OlmSession, error) {
-	session, err := account.Internal.NewInboundSessionFrom(senderKey, ciphertext)
+	session, err := account.Internal.NewInboundSessionFrom(&senderKey, ciphertext)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +76,7 @@ func (account *OlmAccount) NewInboundSessionFrom(senderKey id.Curve25519, cipher
 	return wrapSession(session), nil
 }
 
-func (session *OlmSession) Encrypt(plaintext []byte) (id.OlmMsgType, []byte) {
+func (session *OlmSession) Encrypt(plaintext []byte) (id.OlmMsgType, []byte, error) {
 	session.LastEncryptedTime = time.Now()
 	return session.Internal.Encrypt(plaintext)
 }
@@ -120,7 +120,7 @@ func NewInboundGroupSession(senderKey id.SenderKey, signingKey id.Ed25519, roomI
 		return nil, err
 	}
 	return &InboundGroupSession{
-		Internal:         *igs,
+		Internal:         igs,
 		SigningKey:       signingKey,
 		SenderKey:        senderKey,
 		RoomID:           roomID,
@@ -148,7 +148,7 @@ func (igs *InboundGroupSession) RatchetTo(index uint32) error {
 	if err != nil {
 		return err
 	}
-	igs.Internal = *imported
+	igs.Internal = imported
 	return nil
 }
 
@@ -180,9 +180,13 @@ type OutboundGroupSession struct {
 	content *event.RoomKeyEventContent
 }
 
-func NewOutboundGroupSession(roomID id.RoomID, encryptionContent *event.EncryptionEventContent) *OutboundGroupSession {
+func NewOutboundGroupSession(roomID id.RoomID, encryptionContent *event.EncryptionEventContent) (*OutboundGroupSession, error) {
+	internal, err := olm.NewOutboundGroupSession()
+	if err != nil {
+		return nil, err
+	}
 	ogs := &OutboundGroupSession{
-		Internal: *olm.NewOutboundGroupSession(),
+		Internal: internal,
 		ExpirationMixin: ExpirationMixin{
 			TimeMixin: TimeMixin{
 				CreationTime:      time.Now(),
@@ -196,14 +200,17 @@ func NewOutboundGroupSession(roomID id.RoomID, encryptionContent *event.Encrypti
 		RoomID:      roomID,
 	}
 	if encryptionContent != nil {
+		// Clamp rotation period to prevent unreasonable values
+		// Similar to https://github.com/matrix-org/matrix-rust-sdk/blob/matrix-sdk-crypto-0.7.1/crates/matrix-sdk-crypto/src/olm/group_sessions/outbound.rs#L415-L441
 		if encryptionContent.RotationPeriodMillis != 0 {
 			ogs.MaxAge = time.Duration(encryptionContent.RotationPeriodMillis) * time.Millisecond
+			ogs.MaxAge = min(max(ogs.MaxAge, 1*time.Hour), 365*24*time.Hour)
 		}
 		if encryptionContent.RotationPeriodMessages != 0 {
-			ogs.MaxMessages = encryptionContent.RotationPeriodMessages
+			ogs.MaxMessages = min(max(encryptionContent.RotationPeriodMessages, 1), 10000)
 		}
 	}
-	return ogs
+	return ogs, nil
 }
 
 func (ogs *OutboundGroupSession) ShareContent() event.Content {
@@ -237,7 +244,7 @@ func (ogs *OutboundGroupSession) Encrypt(plaintext []byte) ([]byte, error) {
 	}
 	ogs.MessageCount++
 	ogs.LastEncryptedTime = time.Now()
-	return ogs.Internal.Encrypt(plaintext), nil
+	return ogs.Internal.Encrypt(plaintext)
 }
 
 type TimeMixin struct {

@@ -101,7 +101,7 @@ func (mach *OlmMachine) PublishCrossSigningKeys(ctx context.Context, keys *Cross
 			masterKeyID: keys.MasterKey.PublicKey(),
 		},
 	}
-	masterSig, err := mach.account.Internal.SignJSON(masterKey)
+	masterSig, err := mach.account.SignJSON(masterKey)
 	if err != nil {
 		return fmt.Errorf("failed to sign master key: %w", err)
 	}
@@ -140,6 +140,16 @@ func (mach *OlmMachine) PublishCrossSigningKeys(ctx context.Context, keys *Cross
 	}, uiaCallback)
 	if err != nil {
 		return err
+	}
+
+	if err := mach.CryptoStore.PutSignature(ctx, userID, keys.MasterKey.PublicKey(), userID, mach.account.SigningKey(), masterSig); err != nil {
+		return fmt.Errorf("error storing signature of master key by device signing key in crypto store: %w", err)
+	}
+	if err := mach.CryptoStore.PutSignature(ctx, userID, keys.SelfSigningKey.PublicKey(), userID, keys.MasterKey.PublicKey(), selfSig); err != nil {
+		return fmt.Errorf("error storing signature of self-signing key by master key in crypto store: %w", err)
+	}
+	if err := mach.CryptoStore.PutSignature(ctx, userID, keys.UserSigningKey.PublicKey(), userID, keys.MasterKey.PublicKey(), userSig); err != nil {
+		return fmt.Errorf("error storing signature of user-signing key by master key in crypto store: %w", err)
 	}
 
 	mach.CrossSigningKeys = keys

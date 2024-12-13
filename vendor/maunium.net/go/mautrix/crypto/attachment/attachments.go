@@ -12,6 +12,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"hash"
 	"io"
 
@@ -126,6 +127,43 @@ func (ef *EncryptedFile) EncryptInPlace(data []byte) {
 	ef.Hashes.SHA256 = base64.RawStdEncoding.EncodeToString(checksum[:])
 }
 
+type ReadWriterAt interface {
+	io.WriterAt
+	io.Reader
+}
+
+// EncryptFile encrypts the given file in-place and updates the SHA256 hash in the EncryptedFile struct.
+func (ef *EncryptedFile) EncryptFile(file ReadWriterAt) error {
+	err := ef.decodeKeys(false)
+	if err != nil {
+		return err
+	}
+	block, _ := aes.NewCipher(ef.decoded.key[:])
+	stream := cipher.NewCTR(block, ef.decoded.iv[:])
+	hasher := sha256.New()
+	buf := make([]byte, 32*1024)
+	var writePtr int64
+	var n int
+	for {
+		n, err = file.Read(buf)
+		if err != nil && !errors.Is(err, io.EOF) {
+			return err
+		}
+		if n == 0 {
+			break
+		}
+		stream.XORKeyStream(buf[:n], buf[:n])
+		_, err = file.WriteAt(buf[:n], writePtr)
+		if err != nil {
+			return err
+		}
+		writePtr += int64(n)
+		hasher.Write(buf[:n])
+	}
+	ef.Hashes.SHA256 = base64.RawStdEncoding.EncodeToString(hasher.Sum(nil))
+	return nil
+}
+
 type encryptingReader struct {
 	stream cipher.Stream
 	hash   hash.Hash
@@ -134,6 +172,29 @@ type encryptingReader struct {
 	closed bool
 
 	isDecrypting bool
+}
+
+var _ io.ReadSeekCloser = (*encryptingReader)(nil)
+
+func (r *encryptingReader) Seek(offset int64, whence int) (int64, error) {
+	if r.closed {
+		return 0, ReaderClosed
+	}
+	if offset != 0 || whence != io.SeekStart {
+		return 0, fmt.Errorf("attachments.EncryptStream: only seeking to the beginning is supported")
+	}
+	seeker, ok := r.source.(io.ReadSeeker)
+	if !ok {
+		return 0, fmt.Errorf("attachments.EncryptStream: source reader (%T) is not an io.ReadSeeker", r.source)
+	}
+	n, err := seeker.Seek(offset, whence)
+	if err != nil {
+		return 0, err
+	}
+	block, _ := aes.NewCipher(r.file.decoded.key[:])
+	r.stream = cipher.NewCTR(block, r.file.decoded.iv[:])
+	r.hash.Reset()
+	return n, nil
 }
 
 func (r *encryptingReader) Read(dst []byte) (n int, err error) {
@@ -173,7 +234,7 @@ func (r *encryptingReader) Close() (err error) {
 // The Close() method of the returned io.ReadCloser must be called for the SHA256 hash
 // in the EncryptedFile struct to be updated. The metadata is not valid before the hash
 // is filled.
-func (ef *EncryptedFile) EncryptStream(reader io.Reader) io.ReadCloser {
+func (ef *EncryptedFile) EncryptStream(reader io.Reader) io.ReadSeekCloser {
 	ef.decodeKeys(false)
 	block, _ := aes.NewCipher(ef.decoded.key[:])
 	return &encryptingReader{
@@ -228,7 +289,7 @@ func (ef *EncryptedFile) DecryptInPlace(data []byte) error {
 //
 // The Close call will validate the hash and return an error if it doesn't match.
 // In this case, the written data should be considered compromised and should not be used further.
-func (ef *EncryptedFile) DecryptStream(reader io.Reader) io.ReadCloser {
+func (ef *EncryptedFile) DecryptStream(reader io.Reader) io.ReadSeekCloser {
 	block, _ := aes.NewCipher(ef.decoded.key[:])
 	return &encryptingReader{
 		stream: cipher.NewCTR(block, ef.decoded.iv[:]),

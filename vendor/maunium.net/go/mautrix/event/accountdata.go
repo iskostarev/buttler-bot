@@ -8,6 +8,8 @@ package event
 
 import (
 	"encoding/json"
+	"strings"
+	"time"
 
 	"maunium.net/go/mautrix/id"
 )
@@ -18,10 +20,47 @@ type TagEventContent struct {
 	Tags Tags `json:"tags"`
 }
 
-type Tags map[string]Tag
+type Tags map[RoomTag]TagMetadata
 
-type Tag struct {
+type RoomTag string
+
+const (
+	RoomTagFavourite    RoomTag = "m.favourite"
+	RoomTagLowPriority  RoomTag = "m.lowpriority"
+	RoomTagServerNotice RoomTag = "m.server_notice"
+)
+
+func (rt RoomTag) IsUserDefined() bool {
+	return strings.HasPrefix(string(rt), "u.")
+}
+
+func (rt RoomTag) String() string {
+	return string(rt)
+}
+
+func (rt RoomTag) Name() string {
+	if rt.IsUserDefined() {
+		return string(rt[2:])
+	}
+	switch rt {
+	case RoomTagFavourite:
+		return "Favourite"
+	case RoomTagLowPriority:
+		return "Low priority"
+	case RoomTagServerNotice:
+		return "Server notice"
+	default:
+		return ""
+	}
+}
+
+// Deprecated: type alias
+type Tag = TagMetadata
+
+type TagMetadata struct {
 	Order json.Number `json:"order,omitempty"`
+
+	MauDoublePuppetSource string `json:"fi.mau.double_puppet_source,omitempty"`
 }
 
 // DirectChatsEventContent represents the content of a m.direct account data event.
@@ -42,4 +81,27 @@ type IgnoredUserListEventContent struct {
 
 type IgnoredUser struct {
 	// This is an empty object
+}
+
+type MarkedUnreadEventContent struct {
+	Unread bool `json:"unread"`
+}
+
+type BeeperMuteEventContent struct {
+	MutedUntil int64 `json:"muted_until,omitempty"`
+}
+
+func (bmec *BeeperMuteEventContent) IsMuted() bool {
+	return bmec.MutedUntil < 0 || (bmec.MutedUntil > 0 && bmec.GetMutedUntilTime().After(time.Now()))
+}
+
+var MutedForever = time.Date(9999, 12, 31, 23, 59, 59, 999999999, time.UTC)
+
+func (bmec *BeeperMuteEventContent) GetMutedUntilTime() time.Time {
+	if bmec.MutedUntil < 0 {
+		return MutedForever
+	} else if bmec.MutedUntil > 0 {
+		return time.UnixMilli(bmec.MutedUntil)
+	}
+	return time.Time{}
 }

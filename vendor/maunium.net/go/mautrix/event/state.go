@@ -26,8 +26,9 @@ type RoomNameEventContent struct {
 // RoomAvatarEventContent represents the content of a m.room.avatar state event.
 // https://spec.matrix.org/v1.2/client-server-api/#mroomavatar
 type RoomAvatarEventContent struct {
-	URL  id.ContentURI `json:"url"`
-	Info *FileInfo     `json:"info,omitempty"`
+	URL         id.ContentURIString `json:"url,omitempty"`
+	Info        *FileInfo           `json:"info,omitempty"`
+	MSC3414File *EncryptedFileInfo  `json:"org.matrix.msc3414.file,omitempty"`
 }
 
 // ServerACLEventContent represents the content of a m.room.server_acl state event.
@@ -56,13 +57,29 @@ type Predecessor struct {
 	EventID id.EventID `json:"event_id"`
 }
 
+type RoomVersion string
+
+const (
+	RoomV1  RoomVersion = "1"
+	RoomV2  RoomVersion = "2"
+	RoomV3  RoomVersion = "3"
+	RoomV4  RoomVersion = "4"
+	RoomV5  RoomVersion = "5"
+	RoomV6  RoomVersion = "6"
+	RoomV7  RoomVersion = "7"
+	RoomV8  RoomVersion = "8"
+	RoomV9  RoomVersion = "9"
+	RoomV10 RoomVersion = "10"
+	RoomV11 RoomVersion = "11"
+)
+
 // CreateEventContent represents the content of a m.room.create state event.
 // https://spec.matrix.org/v1.2/client-server-api/#mroomcreate
 type CreateEventContent struct {
 	Type        RoomType     `json:"type,omitempty"`
 	Creator     id.UserID    `json:"creator,omitempty"`
 	Federate    bool         `json:"m.federate,omitempty"`
-	RoomVersion string       `json:"room_version,omitempty"`
+	RoomVersion RoomVersion  `json:"room_version,omitempty"`
 	Predecessor *Predecessor `json:"predecessor,omitempty"`
 }
 
@@ -71,11 +88,12 @@ type CreateEventContent struct {
 type JoinRule string
 
 const (
-	JoinRulePublic     JoinRule = "public"
-	JoinRuleKnock      JoinRule = "knock"
-	JoinRuleInvite     JoinRule = "invite"
-	JoinRuleRestricted JoinRule = "restricted"
-	JoinRulePrivate    JoinRule = "private"
+	JoinRulePublic          JoinRule = "public"
+	JoinRuleKnock           JoinRule = "knock"
+	JoinRuleInvite          JoinRule = "invite"
+	JoinRuleRestricted      JoinRule = "restricted"
+	JoinRuleKnockRestricted JoinRule = "knock_restricted"
+	JoinRulePrivate         JoinRule = "private"
 )
 
 // JoinRulesEventContent represents the content of a m.room.join_rules state event.
@@ -139,6 +157,8 @@ type BridgeInfoSection struct {
 	DisplayName string              `json:"displayname,omitempty"`
 	AvatarURL   id.ContentURIString `json:"avatar_url,omitempty"`
 	ExternalURL string              `json:"external_url,omitempty"`
+
+	Receiver string `json:"fi.mau.receiver,omitempty"`
 }
 
 // BridgeEventContent represents the content of a m.bridge state event.
@@ -149,6 +169,9 @@ type BridgeEventContent struct {
 	Protocol  BridgeInfoSection  `json:"protocol"`
 	Network   *BridgeInfoSection `json:"network,omitempty"`
 	Channel   BridgeInfoSection  `json:"channel"`
+
+	BeeperRoomType   string `json:"com.beeper.room_type,omitempty"`
+	BeeperRoomTypeV2 string `json:"com.beeper.room_type.v2,omitempty"`
 }
 
 type SpaceChildEventContent struct {
@@ -162,16 +185,28 @@ type SpaceParentEventContent struct {
 	Canonical bool     `json:"canonical,omitempty"`
 }
 
+type PolicyRecommendation string
+
+const (
+	PolicyRecommendationBan         PolicyRecommendation = "m.ban"
+	PolicyRecommendationUnstableBan PolicyRecommendation = "org.matrix.mjolnir.ban"
+	PolicyRecommendationUnban       PolicyRecommendation = "fi.mau.meowlnir.unban"
+)
+
 // ModPolicyContent represents the content of a m.room.rule.user, m.room.rule.room, and m.room.rule.server state event.
 // https://spec.matrix.org/v1.2/client-server-api/#moderation-policy-lists
 type ModPolicyContent struct {
-	Entity         string `json:"entity"`
-	Reason         string `json:"reason"`
-	Recommendation string `json:"recommendation"`
+	Entity         string               `json:"entity"`
+	Reason         string               `json:"reason"`
+	Recommendation PolicyRecommendation `json:"recommendation"`
 }
 
 // Deprecated: MSC2716 has been abandoned
 type InsertionMarkerContent struct {
 	InsertionID id.EventID `json:"org.matrix.msc2716.marker.insertion"`
 	Timestamp   int64      `json:"com.beeper.timestamp,omitempty"`
+}
+
+type ElementFunctionalMembersContent struct {
+	ServiceMembers []id.UserID `json:"service_members"`
 }
