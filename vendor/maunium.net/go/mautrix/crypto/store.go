@@ -9,10 +9,13 @@ package crypto
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"sync"
+	"time"
 
 	"go.mau.fi/util/dbutil"
+	"go.mau.fi/util/exsync"
 	"golang.org/x/exp/maps"
 
 	"maunium.net/go/mautrix/event"
@@ -42,11 +45,22 @@ type Store interface {
 	HasSession(context.Context, id.SenderKey) bool
 	// GetSessions returns all Olm sessions in the store with the given sender key.
 	GetSessions(context.Context, id.SenderKey) (OlmSessionList, error)
-	// GetLatestSession returns the session with the highest session ID (lexiographically sorting).
-	// It's usually safe to return the most recently added session if sorting by session ID is too difficult.
+	// GetLatestSession returns the most recent session that should be used for encrypting outbound messages.
+	// It's usually the one with the most recent successful decryption or the highest ID lexically.
 	GetLatestSession(context.Context, id.SenderKey) (*OlmSession, error)
+	// GetNewestSessionCreationTS returns the creation timestamp of the most recently created session for the given sender key.
+	GetNewestSessionCreationTS(context.Context, id.SenderKey) (time.Time, error)
 	// UpdateSession updates a session that has previously been inserted with AddSession.
 	UpdateSession(context.Context, id.SenderKey, *OlmSession) error
+	// DeleteSession deletes the given session that has been previously inserted with AddSession.
+	DeleteSession(context.Context, id.SenderKey, *OlmSession) error
+
+	// PutOlmHash marks a given olm message hash as handled.
+	PutOlmHash(context.Context, [32]byte, time.Time) error
+	// GetOlmHash gets the time that a given olm hash was handled.
+	GetOlmHash(context.Context, [32]byte) (time.Time, error)
+	// DeleteOldOlmHashes deletes all olm hashes that were handled before the given time.
+	DeleteOldOlmHashes(context.Context, time.Time) error
 
 	// PutGroupSession inserts an inbound Megolm session into the store. If an earlier withhold event has been inserted
 	// with PutWithheldGroupSession, this call should replace that. However, PutWithheldGroupSession must not replace
@@ -132,6 +146,8 @@ type Store interface {
 	IsKeySignedBy(ctx context.Context, userID id.UserID, key id.Ed25519, signedByUser id.UserID, signedByKey id.Ed25519) (bool, error)
 	// DropSignaturesByKey deletes the signatures made by the given user and key from the store. It returns the number of signatures deleted.
 	DropSignaturesByKey(context.Context, id.UserID, id.Ed25519) (int64, error)
+	// GetSignaturesForKeyBy retrieves the stored signatures for a given cross-signing or device key, by the given signer.
+	GetSignaturesForKeyBy(context.Context, id.UserID, id.Ed25519, id.UserID) (map[id.Ed25519]string, error)
 
 	// PutSecret stores a named secret, replacing it if it exists already.
 	PutSecret(context.Context, id.Secret, string) error
@@ -171,6 +187,7 @@ type MemoryStore struct {
 	KeySignatures         map[id.UserID]map[id.Ed25519]map[id.UserID]map[id.Ed25519]string
 	OutdatedUsers         map[id.UserID]struct{}
 	Secrets               map[id.Secret]string
+	OlmHashes             *exsync.Set[[32]byte]
 }
 
 var _ Store = (*MemoryStore)(nil)
@@ -193,6 +210,7 @@ func NewMemoryStore(saveCallback func() error) *MemoryStore {
 		KeySignatures:         make(map[id.UserID]map[id.Ed25519]map[id.UserID]map[id.Ed25519]string),
 		OutdatedUsers:         make(map[id.UserID]struct{}),
 		Secrets:               make(map[id.Secret]string),
+		OlmHashes:             exsync.NewSet[[32]byte](),
 	}
 }
 
@@ -233,6 +251,19 @@ func (gs *MemoryStore) AddSession(_ context.Context, senderKey id.SenderKey, ses
 	return gs.save()
 }
 
+func (gs *MemoryStore) DeleteSession(ctx context.Context, senderKey id.SenderKey, target *OlmSession) error {
+	gs.lock.Lock()
+	defer gs.lock.Unlock()
+	sessions, ok := gs.Sessions[senderKey]
+	if !ok {
+		return nil
+	}
+	gs.Sessions[senderKey] = slices.DeleteFunc(sessions, func(session *OlmSession) bool {
+		return session == target
+	})
+	return gs.save()
+}
+
 func (gs *MemoryStore) UpdateSession(_ context.Context, _ id.SenderKey, _ *OlmSession) error {
 	// we don't need to do anything here because the session is a pointer and already stored in our map
 	return gs.save()
@@ -245,6 +276,23 @@ func (gs *MemoryStore) HasSession(_ context.Context, senderKey id.SenderKey) boo
 	return ok && len(sessions) > 0 && !sessions[0].Expired()
 }
 
+func (gs *MemoryStore) PutOlmHash(_ context.Context, hash [32]byte, receivedAt time.Time) error {
+	gs.OlmHashes.Add(hash)
+	return nil
+}
+
+func (gs *MemoryStore) GetOlmHash(_ context.Context, hash [32]byte) (time.Time, error) {
+	if gs.OlmHashes.Has(hash) {
+		// The time isn't that important, so we just return the current time
+		return time.Now(), nil
+	}
+	return time.Time{}, nil
+}
+
+func (gs *MemoryStore) DeleteOldOlmHashes(_ context.Context, beforeTS time.Time) error {
+	return nil
+}
+
 func (gs *MemoryStore) GetLatestSession(_ context.Context, senderKey id.SenderKey) (*OlmSession, error) {
 	gs.lock.RLock()
 	defer gs.lock.RUnlock()
@@ -252,7 +300,16 @@ func (gs *MemoryStore) GetLatestSession(_ context.Context, senderKey id.SenderKe
 	if !ok || len(sessions) == 0 {
 		return nil, nil
 	}
-	return sessions[0], nil
+	return sessions[len(sessions)-1], nil
+}
+
+func (gs *MemoryStore) GetNewestSessionCreationTS(ctx context.Context, senderKey id.SenderKey) (createdAt time.Time, err error) {
+	var sess *OlmSession
+	sess, err = gs.GetLatestSession(ctx, senderKey)
+	if sess != nil {
+		createdAt = sess.CreationTime
+	}
+	return
 }
 
 func (gs *MemoryStore) getGroupSessions(roomID id.RoomID) map[id.SessionID]*InboundGroupSession {

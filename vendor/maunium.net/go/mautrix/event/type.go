@@ -112,7 +112,7 @@ func (et *Type) GuessClass() TypeClass {
 		StatePowerLevels.Type, StateRoomName.Type, StateRoomAvatar.Type, StateServerACL.Type, StateTopic.Type,
 		StatePinnedEvents.Type, StateTombstone.Type, StateEncryption.Type, StateBridge.Type, StateHalfShotBridge.Type,
 		StateSpaceParent.Type, StateSpaceChild.Type, StatePolicyRoom.Type, StatePolicyServer.Type, StatePolicyUser.Type,
-		StateInsertionMarker.Type, StateElementFunctionalMembers.Type:
+		StateInsertionMarker.Type, StateElementFunctionalMembers.Type, StateBeeperRoomFeatures.Type:
 		return StateEventType
 	case EphemeralEventReceipt.Type, EphemeralEventTyping.Type, EphemeralEventPresence.Type:
 		return EphemeralEventType
@@ -126,7 +126,8 @@ func (et *Type) GuessClass() TypeClass {
 		InRoomVerificationStart.Type, InRoomVerificationReady.Type, InRoomVerificationAccept.Type,
 		InRoomVerificationKey.Type, InRoomVerificationMAC.Type, InRoomVerificationCancel.Type,
 		CallInvite.Type, CallCandidates.Type, CallAnswer.Type, CallReject.Type, CallSelectAnswer.Type,
-		CallNegotiate.Type, CallHangup.Type, BeeperMessageStatus.Type, EventUnstablePollStart.Type, EventUnstablePollResponse.Type:
+		CallNegotiate.Type, CallHangup.Type, BeeperMessageStatus.Type, EventUnstablePollStart.Type, EventUnstablePollResponse.Type,
+		BeeperTranscription.Type:
 		return MessageEventType
 	case ToDeviceRoomKey.Type, ToDeviceRoomKeyRequest.Type, ToDeviceForwardedRoomKey.Type, ToDeviceRoomKeyWithheld.Type,
 		ToDeviceBeeperRoomKeyAck.Type:
@@ -203,6 +204,7 @@ var (
 	StateInsertionMarker = Type{"org.matrix.msc2716.marker", StateEventType}
 
 	StateElementFunctionalMembers = Type{"io.element.functional_members", StateEventType}
+	StateBeeperRoomFeatures       = Type{"com.beeper.room_features", StateEventType}
 )
 
 // Message events
@@ -232,6 +234,7 @@ var (
 	CallHangup       = Type{"m.call.hangup", MessageEventType}
 
 	BeeperMessageStatus = Type{"com.beeper.message_send_status", MessageEventType}
+	BeeperTranscription = Type{"com.beeper.transcription", MessageEventType}
 
 	EventUnstablePollStart    = Type{Type: "org.matrix.msc3381.poll.start", Class: MessageEventType}
 	EventUnstablePollResponse = Type{Type: "org.matrix.msc3381.poll.response", Class: MessageEventType}

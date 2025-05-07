@@ -71,6 +71,13 @@ var (
 	MBadStatus         = RespError{ErrCode: "M_BAD_STATUS"}
 	MConnectionTimeout = RespError{ErrCode: "M_CONNECTION_TIMEOUT"}
 	MConnectionFailed  = RespError{ErrCode: "M_CONNECTION_FAILED"}
+
+	MUnredactedContentDeleted     = RespError{ErrCode: "FI.MAU.MSC2815_UNREDACTED_CONTENT_DELETED"}
+	MUnredactedContentNotReceived = RespError{ErrCode: "FI.MAU.MSC2815_UNREDACTED_CONTENT_NOT_RECEIVED"}
+)
+
+var (
+	ErrClientIsNil = errors.New("client is nil")
 )
 
 // HTTPError An HTTP Error response, which may wrap an underlying native Go Error.
@@ -96,10 +103,9 @@ func (e HTTPError) Error() string {
 	if e.WrappedError != nil {
 		return fmt.Sprintf("%s: %v", e.Message, e.WrappedError)
 	} else if e.RespError != nil {
-		return fmt.Sprintf("failed to %s %s: %s (HTTP %d): %s", e.Request.Method, e.Request.URL.Path,
-			e.RespError.ErrCode, e.Response.StatusCode, e.RespError.Err)
+		return fmt.Sprintf("%s (HTTP %d): %s", e.RespError.ErrCode, e.Response.StatusCode, e.RespError.Err)
 	} else {
-		msg := fmt.Sprintf("failed to %s %s: HTTP %d", e.Request.Method, e.Request.URL.Path, e.Response.StatusCode)
+		msg := fmt.Sprintf("HTTP %d", e.Response.StatusCode)
 		if len(e.ResponseBody) > 0 {
 			msg = fmt.Sprintf("%s: %s", msg, e.ResponseBody)
 		}

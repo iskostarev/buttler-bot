@@ -3,6 +3,7 @@ package mautrix
 import (
 	"encoding/json"
 	"strconv"
+	"time"
 
 	"maunium.net/go/mautrix/crypto/signatures"
 	"maunium.net/go/mautrix/event"
@@ -91,6 +92,10 @@ type ReqLogin struct {
 	StoreHomeserverURL bool `json:"-"`
 }
 
+type ReqPutDevice struct {
+	DisplayName string `json:"display_name,omitempty"`
+}
+
 type ReqUIAuthFallback struct {
 	Session string `json:"session"`
 	User    string `json:"user"`
@@ -134,10 +139,30 @@ type ReqRedact struct {
 	Extra  map[string]interface{}
 }
 
+type ReqRedactUser struct {
+	Reason string `json:"reason"`
+	Limit  int    `json:"-"`
+}
+
 type ReqMembers struct {
 	At            string           `json:"at"`
 	Membership    event.Membership `json:"membership,omitempty"`
 	NotMembership event.Membership `json:"not_membership,omitempty"`
+}
+
+type ReqJoinRoom struct {
+	Via              []string `json:"-"`
+	Reason           string   `json:"reason,omitempty"`
+	ThirdPartySigned any      `json:"third_party_signed,omitempty"`
+}
+
+type ReqKnockRoom struct {
+	Via    []string `json:"-"`
+	Reason string   `json:"reason,omitempty"`
+}
+
+type ReqMutualRooms struct {
+	From string `json:"-"`
 }
 
 // ReqInvite3PID is the JSON request for https://spec.matrix.org/v1.2/client-server-api/#post_matrixclientv3roomsroomidinvite-1
@@ -183,7 +208,8 @@ type ReqTyping struct {
 }
 
 type ReqPresence struct {
-	Presence event.Presence `json:"presence"`
+	Presence  event.Presence `json:"presence"`
+	StatusMsg string         `json:"status_msg,omitempty"`
 }
 
 type ReqAliasCreate struct {
@@ -309,6 +335,21 @@ type OneTimeKeysRequest map[id.UserID]map[id.DeviceID]id.KeyAlgorithm
 
 type ReqSendToDevice struct {
 	Messages map[id.UserID]map[id.DeviceID]*event.Content `json:"messages"`
+}
+
+type ReqSendEvent struct {
+	Timestamp     int64
+	TransactionID string
+	UnstableDelay time.Duration
+
+	DontEncrypt bool
+
+	MeowEventID id.EventID
+}
+
+type ReqUpdateDelayedEvent struct {
+	DelayID string `json:"-"`
+	Action  string `json:"action"` // TODO use enum
 }
 
 // ReqDeviceInfo is the JSON request for https://spec.matrix.org/v1.2/client-server-api/#put_matrixclientv3devicesdeviceid

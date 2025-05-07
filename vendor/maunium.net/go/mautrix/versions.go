@@ -60,9 +60,12 @@ type UnstableFeature struct {
 }
 
 var (
-	FeatureAsyncUploads       = UnstableFeature{UnstableFlag: "fi.mau.msc2246.stable", SpecVersion: SpecV17}
-	FeatureAppservicePing     = UnstableFeature{UnstableFlag: "fi.mau.msc2659.stable", SpecVersion: SpecV17}
-	FeatureAuthenticatedMedia = UnstableFeature{UnstableFlag: "org.matrix.msc3916.stable", SpecVersion: SpecV111}
+	FeatureAsyncUploads        = UnstableFeature{UnstableFlag: "fi.mau.msc2246.stable", SpecVersion: SpecV17}
+	FeatureAppservicePing      = UnstableFeature{UnstableFlag: "fi.mau.msc2659.stable", SpecVersion: SpecV17}
+	FeatureAuthenticatedMedia  = UnstableFeature{UnstableFlag: "org.matrix.msc3916.stable", SpecVersion: SpecV111}
+	FeatureMutualRooms         = UnstableFeature{UnstableFlag: "uk.half-shot.msc2666.query_mutual_rooms"}
+	FeatureUserRedaction       = UnstableFeature{UnstableFlag: "org.matrix.msc4194"}
+	FeatureViewRedactedContent = UnstableFeature{UnstableFlag: "fi.mau.msc2815"}
 
 	BeeperFeatureHungry               = UnstableFeature{UnstableFlag: "com.beeper.hungry"}
 	BeeperFeatureBatchSending         = UnstableFeature{UnstableFlag: "com.beeper.batch_sending"}
@@ -110,6 +113,8 @@ var (
 	SpecV19  = MustParseSpecVersion("v1.9")
 	SpecV110 = MustParseSpecVersion("v1.10")
 	SpecV111 = MustParseSpecVersion("v1.11")
+	SpecV112 = MustParseSpecVersion("v1.12")
+	SpecV113 = MustParseSpecVersion("v1.13")
 )
 
 func (svf SpecVersionFormat) String() string {
