@@ -82,6 +82,7 @@ golang.org/x/crypto/pbkdf2
 ## explicit; go 1.24.0
 golang.org/x/exp/constraints
 golang.org/x/exp/maps
+golang.org/x/exp/slices
 # golang.org/x/net v0.47.0
 ## explicit; go 1.24.0
 golang.org/x/net/http/httpguts
@@ -127,6 +128,7 @@ maunium.net/go/mautrix/crypto/signatures
 maunium.net/go/mautrix/crypto/sql_store_upgrade
 maunium.net/go/mautrix/crypto/ssss
 maunium.net/go/mautrix/crypto/utils
+maunium.net/go/mautrix/crypto/verificationhelper
 maunium.net/go/mautrix/event
 maunium.net/go/mautrix/id
 maunium.net/go/mautrix/pushrules

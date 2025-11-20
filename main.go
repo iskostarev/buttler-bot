@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 
 	"github.com/pkg/errors"
@@ -35,7 +36,7 @@ func main() {
 
 	configureLogging(&config)
 
-	session, err := InitSession(&config)
+	session, err := InitSession(context.Background(), &config)
 	if err != nil {
 		panic(errors.Wrap(err, "Failed to initialize session"))
 	}

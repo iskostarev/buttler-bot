@@ -16,6 +16,7 @@ import (
 
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/crypto/cryptohelper"
+	"maunium.net/go/mautrix/crypto/verificationhelper"
 	mxevent "maunium.net/go/mautrix/event"
 	mxid "maunium.net/go/mautrix/id"
 )
@@ -64,7 +65,7 @@ func buildTimezoneRegexp(innerRegex string) (result *regexp.Regexp, err error) {
 	return
 }
 
-func InitSession(config *Config) (session Session, err error) {
+func InitSession(ctx context.Context, config *Config) (session Session, err error) {
 	passwordBytes, err := os.ReadFile(config.Matrix.PasswordPath)
 	if err != nil {
 		return
@@ -106,15 +107,35 @@ func InitSession(config *Config) (session Session, err error) {
 		}
 
 		cryptoHelper.LoginAs = &reqLogin
-		err = cryptoHelper.Init(context.TODO())
+		err = cryptoHelper.Init(ctx)
 		if err != nil {
 			return session, err
 		}
 
 		session.Client.Crypto = cryptoHelper
+
 		logrus.Infof("CryptoHelper initialized, logged in")
+
+		verificationCallbacks := &VerificationCallbacks{}
+		verificationHelper := verificationhelper.NewVerificationHelper(
+			session.Client,
+			cryptoHelper.Machine(),
+			verificationhelper.NewInMemoryVerificationStore(),
+			verificationCallbacks,
+			false,
+			false,
+			true,
+		)
+		verificationCallbacks.VerificationHelper = verificationHelper
+
+		err = verificationHelper.Init(ctx)
+		if err != nil {
+			return session, err
+		}
+
+		logrus.Infof("VerificationHelper initialized")
 	} else {
-		_, err = session.Client.Login(context.TODO(), &reqLogin)
+		_, err = session.Client.Login(ctx, &reqLogin)
 		if err != nil {
 			return session, err
 		}
