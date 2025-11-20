@@ -1,3 +1,241 @@
+## v0.26.0 (2025-11-16)
+
+* *(client,appservice)* Deprecated `SendMassagedStateEvent` as `SendStateEvent`
+  has been able to do the same for a while now.
+* *(client,federation)* Added size limits for responses to make it safer to send
+  requests to untrusted servers.
+* *(client)* Added wrapper for `/admin/whois` client API
+  (thanks to [@nexy7574] in [#411]).
+* *(synapseadmin)* Added `force_purge` option to DeleteRoom
+  (thanks to [@nexy7574] in [#420]).
+* *(statestore)* Added saving join rules for rooms.
+* *(bridgev2)* Added optional automatic rollback of room state if bridging the
+  change to the remote network fails.
+* *(bridgev2)* Added management room notices if transient disconnect state
+  doesn't resolve within 3 minutes.
+* *(bridgev2)* Added interface to signal that certain participants couldn't be
+  invited when creating a group.
+* *(bridgev2)* Added `select` type for user input fields in login.
+* *(bridgev2)* Added interface to let network connector customize personal
+  filtering space.
+* *(bridgev2/matrix)* Added checks to avoid sending error messages in reply to
+  other bots.
+* *(bridgev2/matrix)* Switched to using [MSC4169] to send redactions whenever
+  possible.
+* *(bridgev2/publicmedia)* Added support for custom path prefixes, file names,
+  and encrypted files.
+* *(bridgev2/commands)* Added command to resync a single portal.
+* *(bridgev2/commands)* Added create group command.
+* *(bridgev2/config)* Added option to limit maximum number of logins.
+* *(bridgev2)* Changed ghost joining to skip unnecessary invite if portal room
+  is public.
+* *(bridgev2/disappear)* Changed read receipt handling to only start
+  disappearing timers for messages up to the read message (note: may not work in
+  all cases if the read receipt points at an unknown event).
+* *(event/reply)* Changed plaintext reply fallback removal to only happen when
+  an HTML reply fallback is removed successfully.
+* *(bridgev2/matrix)* Fixed unnecessary sleep after registering bot on first run.
+* *(crypto/goolm)* Fixed panic when processing certain malformed Olm messages.
+* *(federation)* Fixed HTTP method for sending transactions
+  (thanks to [@nexy7574] in [#426]).
+* *(federation)* Fixed response body being closed even when using `DontReadBody`
+  parameter.
+* *(federation)* Fixed validating auth for requests with query params.
+* *(federation/eventauth)* Fixed typo causing restricted joins to not work.
+
+[MSC416]: https://github.com/matrix-org/matrix-spec-proposals/pull/4169
+[#411]: github.com/mautrix/go/pull/411
+[#420]: github.com/mautrix/go/pull/420
+[#426]: github.com/mautrix/go/pull/426
+
+## v0.25.2 (2025-10-16)
+
+* **Breaking change *(id)*** Split `UserID.ParseAndValidate` into
+  `ParseAndValidateRelaxed` and `ParseAndValidateStrict`. Strict is the old
+  behavior, but most users likely want the relaxed version, as there are real
+  users whose user IDs aren't valid under the strict rules.
+* *(crypto)* Added helper methods for generating and verifying with recovery
+  keys.
+* *(bridgev2/matrix)* Added config option to automatically generate a recovery
+  key for the bridge bot and self-sign the bridge's device.
+* *(bridgev2/matrix)* Added initial support for using appservice/MSC3202 mode
+  for encryption with standard servers like Synapse.
+* *(bridgev2)* Added optional support for implicit read receipts.
+* *(bridgev2)* Added interface for deleting chats on remote network.
+* *(bridgev2)* Added local enforcement of media duration and size limits.
+* *(bridgev2)* Extended event duration logging to log any event taking too long.
+* *(bridgev2)* Improved validation in group creation provisioning API.
+* *(event)* Added event type constant for poll end events.
+* *(client)* Added wrapper for searching user directory.
+* *(client)* Improved support for managing [MSC4140] delayed events.
+* *(crypto/helper)* Changed default sync handling to not block on waiting for
+  decryption keys. On initial sync, keys won't be requested at all by default.
+* *(crypto)* Fixed olm unwedging not working (regressed in v0.25.1).
+* *(bridgev2)* Fixed various bugs with migrating to split portals.
+* *(event)* Fixed poll start events having incorrect null `m.relates_to`.
+* *(client)* Fixed `RespUserProfile` losing standard fields when re-marshaling.
+* *(federation)* Fixed various bugs in event auth.
+
+## v0.25.1 (2025-09-16)
+
+* *(client)* Fixed HTTP method of delete devices API call
+  (thanks to [@fmseals] in [#393]).
+* *(client)* Added wrappers for [MSC4323]: User suspension & locking endpoints
+  (thanks to [@nexy7574] in [#407]).
+* *(client)* Stabilized support for extensible profiles.
+* *(client)* Stabilized support for `state_after` in sync.
+* *(client)* Removed deprecated MSC2716 requests.
+* *(crypto)* Added fallback to ensure `m.relates_to` is always copied even if
+  the content struct doesn't implement `Relatable`.
+* *(crypto)* Changed olm unwedging to ignore newly created sessions if they
+  haven't been used successfully in either direction.
+* *(federation)* Added utilities for generating, parsing, validating and
+  authorizing PDUs.
+  * Note: the new PDU code depends on `GOEXPERIMENT=jsonv2`
+* *(event)* Added `is_animated` flag from [MSC4230] to file info.
+* *(event)* Added types for [MSC4332]: In-room bot commands.
+* *(event)* Added missing poll end event type for [MSC3381].
+* *(appservice)* Fixed URLs not being escaped properly when using unix socket
+  for homeserver connections.
+* *(format)* Added more helpers for forming markdown links.
+* *(event,bridgev2)* Added support for Beeper's disappearing message state event.
+* *(bridgev2)* Redesigned group creation interface and added support in commands
+  and provisioning API.
+* *(bridgev2)* Added GetEvent to Matrix interface to allow network connectors to
+  get an old event. The method is best effort only, as some configurations don't
+  allow fetching old events.
+* *(bridgev2)* Added shared logic for provisioning that can be reused by the
+  API, commands and other sources.
+* *(bridgev2)* Fixed mentions and URL previews not being copied over when
+  caption and media are merged.
+* *(bridgev2)* Removed config option to change provisioning API prefix, which
+  had already broken in the previous release.
+
+[@fmseals]: https://github.com/fmseals
+[#393]: https://github.com/mautrix/go/pull/393
+[#407]: https://github.com/mautrix/go/pull/407
+[MSC3381]: https://github.com/matrix-org/matrix-spec-proposals/pull/3381
+[MSC4230]: https://github.com/matrix-org/matrix-spec-proposals/pull/4230
+[MSC4323]: https://github.com/matrix-org/matrix-spec-proposals/pull/4323
+[MSC4332]: https://github.com/matrix-org/matrix-spec-proposals/pull/4332
+
+## v0.25.0 (2025-08-16)
+
+* Bumped minimum Go version to 1.24.
+* **Breaking change *(appservice,bridgev2,federation)*** Replaced gorilla/mux
+  with standard library ServeMux.
+* *(client,bridgev2)* Added support for creator power in room v12.
+* *(client)* Added option to not set `User-Agent` header for improved Wasm
+  compatibility.
+* *(bridgev2)* Added support for following tombstones.
+* *(bridgev2)* Added interface for getting arbitrary state event from Matrix.
+* *(bridgev2)* Added batching to disappearing message queue to ensure it doesn't
+  use too many resources even if there are a large number of messages.
+* *(bridgev2/commands)* Added support for canceling QR login with `cancel`
+  command.
+* *(client)* Added option to override HTTP client used for .well-known
+  resolution.
+* *(crypto/backup)* Added method for encrypting key backup session without
+  private keys.
+* *(event->id)* Moved room version type and constants to id package.
+* *(bridgev2)* Bots in DM portals will now be added to the functional members
+  state event to hide them from the room name calculation.
+* *(bridgev2)* Changed message delete handling to ignore "delete for me" events
+  if there are multiple Matrix users in the room.
+* *(format/htmlparser)* Changed text processing to collapse multiple spaces into
+  one when outside `pre`/`code` tags.
+* *(format/htmlparser)* Removed link suffix in plaintext output when link text
+  is only missing protocol part of href.
+  * e.g. `<a href="https://example.com">example.com</a>` will turn into
+    `example.com` rather than `example.com (https://example.com)`
+* *(appservice)* Switched appservice websockets from gorilla/websocket to
+  coder/websocket.
+* *(bridgev2/matrix)* Fixed encryption key sharing not ignoring ghosts properly.
+* *(crypto/attachments)* Fixed hash check when decrypting file streams.
+* *(crypto)* Removed unnecessary `AlreadyShared` error in `ShareGroupSession`.
+  The function will now act as if it was successful instead.
+
+## v0.24.2 (2025-07-16)
+
+* *(bridgev2)* Added support for return values from portal event handlers. Note
+  that the return value will always be "queued" unless the event buffer is
+  disabled.
+* *(bridgev2)* Added support for [MSC4144] per-message profile passthrough in
+  relay mode.
+* *(bridgev2)* Added option to auto-reconnect logins after a certain period if
+  they hit an `UNKNOWN_ERROR` state.
+* *(bridgev2)* Added analytics for event handler panics.
+* *(bridgev2)* Changed new room creation to hardcode room v11 to avoid v12 rooms
+  being created before proper support for them can be added.
+* *(bridgev2)* Changed queuing events to block instead of dropping events if the
+  buffer is full.
+* *(bridgev2)* Fixed assumption that replies to unknown messages are cross-room.
+* *(id)* Fixed server name validation not including ports correctly
+  (thanks to [@krombel] in [#392]).
+* *(federation)* Fixed base64 algorithm in signature generation.
+* *(event)* Fixed [MSC4144] fallbacks not being removed from edits.
+
+[@krombel]: https://github.com/krombel
+[#392]: https://github.com/mautrix/go/pull/392
+
+## v0.24.1 (2025-06-16)
+
+* *(commands)* Added framework for using reactions as buttons that execute
+  command handlers.
+* *(client)* Added wrapper for `/relations` endpoints.
+* *(client)* Added support for stable version of room summary endpoint.
+* *(client)* Fixed parsing URL preview responses where width/height are strings.
+* *(federation)* Fixed bugs in server auth.
+* *(id)* Added utilities for validating server names.
+* *(event)* Fixed incorrect empty `entity` field when sending hashed moderation
+  policy events.
+* *(event)* Added [MSC4293] redact events field to member events.
+* *(event)* Added support for fallbacks in [MSC4144] per-message profiles.
+* *(format)* Added `MarkdownLink` and `MarkdownMention` utility functions for
+  generating properly escaped markdown.
+* *(synapseadmin)* Added support for synchronous (v1) room delete endpoint.
+* *(synapseadmin)* Changed `Client` struct to not embed the `mautrix.Client`.
+  This is a breaking change if you were relying on accessing non-admin functions
+  from the admin client.
+* *(bridgev2/provisioning)* Fixed `/display_and_wait` not passing through errors
+  from the network connector properly.
+* *(bridgev2/crypto)* Fixed encryption not working if the user's ID had the same
+  prefix as the bridge ghosts (e.g. `@whatsappbridgeuser:example.com` with a
+  `@whatsapp_` prefix).
+* *(bridgev2)* Fixed portals not being saved after creating a DM portal from a
+  Matrix DM invite.
+* *(bridgev2)* Added config option to determine whether cross-room replies
+  should be bridged.
+* *(appservice)* Fixed `EnsureRegistered` not being called when sending a custom
+  member event for the controlled user.
+
+[MSC4293]: https://github.com/matrix-org/matrix-spec-proposals/pull/4293
+
+## v0.24.0 (2025-05-16)
+
+* *(commands)* Added generic framework for implementing bot commands.
+* *(client)* Added support for specifying maximum number of HTTP retries using
+  a context value instead of having to call `MakeFullRequest` manually.
+* *(client,federation)* Added methods for fetching room directories.
+* *(federation)* Added support for server side of request authentication.
+* *(synapseadmin)* Added wrapper for the account suspension endpoint.
+* *(format)* Added method for safely wrapping a string in markdown inline code.
+* *(crypto)* Added method to import key backup without persisting to database,
+  to allow the client more control over the process.
+* *(bridgev2)* Added viewing chat interface to signal when the user is viewing
+  a given chat.
+* *(bridgev2)* Added option to pass through transaction ID from client when
+  sending messages to remote network.
+* *(crypto)* Fixed unnecessary error log when decrypting dummy events used for
+  unwedging Olm sessions.
+* *(crypto)* Fixed `forwarding_curve25519_key_chain` not being set consistently
+  when backing up keys.
+* *(event)* Fixed marshaling legacy VoIP events with no version field.
+* *(bridgev2)* Fixed disappearing message references not being deleted when the
+  portal is deleted.
+* *(bridgev2)* Fixed read receipt bridging not ignoring fake message entries
+  and causing unnecessary error logs.
+
 ## v0.23.3 (2025-04-16)
 
 * *(commands)* Added generic command processing framework for bots.

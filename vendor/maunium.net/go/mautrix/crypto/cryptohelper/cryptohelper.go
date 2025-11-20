@@ -170,14 +170,12 @@ func (helper *CryptoHelper) Init(ctx context.Context) error {
 				if err != nil {
 					return err
 				}
-				rawCryptoStore.DeviceID = resp.DeviceID
 				helper.client.DeviceID = resp.DeviceID
 			} else {
 				helper.log.Debug().
 					Str("username", helper.LoginAs.Identifier.User).
 					Stringer("device_id", storedDeviceID).
 					Msg("Using existing device")
-				rawCryptoStore.DeviceID = storedDeviceID
 				helper.client.DeviceID = storedDeviceID
 			}
 		} else if helper.LoginAs != nil {
@@ -193,12 +191,10 @@ func (helper *CryptoHelper) Init(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			if storedDeviceID == "" {
-				rawCryptoStore.DeviceID = helper.client.DeviceID
-			}
 		} else if storedDeviceID != "" && storedDeviceID != helper.client.DeviceID {
 			return fmt.Errorf("mismatching device ID in client and crypto store (%q != %q)", storedDeviceID, helper.client.DeviceID)
 		}
+		rawCryptoStore.DeviceID = helper.client.DeviceID
 	} else if helper.LoginAs != nil {
 		return fmt.Errorf("LoginAs can only be used with a managed crypto store")
 	}
@@ -227,13 +223,6 @@ func (helper *CryptoHelper) Init(ctx context.Context) error {
 	} else if helper.ASEventProcessor != nil {
 		helper.mach.AddAppserviceListener(helper.ASEventProcessor)
 		helper.ASEventProcessor.On(event.EventEncrypted, helper.HandleEncrypted)
-	}
-
-	if helper.client.SetAppServiceDeviceID {
-		err = helper.mach.ShareKeys(ctx, -1)
-		if err != nil {
-			return fmt.Errorf("failed to share keys: %w", err)
-		}
 	}
 
 	return nil
@@ -272,21 +261,21 @@ func (helper *CryptoHelper) verifyDeviceKeysOnServer(ctx context.Context) error 
 	if !ok || len(device.Keys) == 0 {
 		if isShared {
 			return fmt.Errorf("olm account is marked as shared, keys seem to have disappeared from the server")
-		} else {
-			helper.log.Debug().Msg("Olm account not shared and keys not on server, so device is probably fine")
-			return nil
 		}
+		helper.log.Debug().Msg("Olm account not shared and keys not on server, sharing initial keys")
+		err = helper.mach.ShareKeys(ctx, -1)
+		if err != nil {
+			return fmt.Errorf("failed to share keys: %w", err)
+		}
+		return nil
 	} else if !isShared {
 		return fmt.Errorf("olm account is not marked as shared, but there are keys on the server")
 	} else if ed := device.Keys.GetEd25519(helper.client.DeviceID); ownID.SigningKey != ed {
 		return fmt.Errorf("mismatching identity key on server (%q != %q)", ownID.SigningKey, ed)
-	}
-	if !isShared {
-		helper.log.Debug().Msg("Olm account not marked as shared, but keys on server match?")
 	} else {
 		helper.log.Debug().Msg("Olm account marked as shared and keys on server match, device is fine")
+		return nil
 	}
-	return nil
 }
 
 var NoSessionFound = crypto.NoSessionFound
@@ -308,24 +297,14 @@ func (helper *CryptoHelper) HandleEncrypted(ctx context.Context, evt *event.Even
 	ctx = log.WithContext(ctx)
 
 	decrypted, err := helper.Decrypt(ctx, evt)
-	if errors.Is(err, NoSessionFound) {
-		log.Debug().
-			Int("wait_seconds", int(initialSessionWaitTimeout.Seconds())).
-			Msg("Couldn't find session, waiting for keys to arrive...")
-		if helper.mach.WaitForSession(ctx, evt.RoomID, content.SenderKey, content.SessionID, initialSessionWaitTimeout) {
-			log.Debug().Msg("Got keys after waiting, trying to decrypt event again")
-			decrypted, err = helper.Decrypt(ctx, evt)
-		} else {
-			go helper.waitLongerForSession(ctx, log, evt)
-			return
-		}
-	}
-	if err != nil {
+	if errors.Is(err, NoSessionFound) && ctx.Value(mautrix.SyncTokenContextKey) != "" {
+		go helper.waitForSession(ctx, evt)
+	} else if err != nil {
 		log.Warn().Err(err).Msg("Failed to decrypt event")
 		helper.DecryptErrorCallback(evt, err)
-		return
+	} else {
+		helper.postDecrypt(ctx, decrypted)
 	}
-	helper.postDecrypt(ctx, decrypted)
 }
 
 func (helper *CryptoHelper) postDecrypt(ctx context.Context, decrypted *event.Event) {
@@ -366,7 +345,29 @@ func (helper *CryptoHelper) RequestSession(ctx context.Context, roomID id.RoomID
 	}
 }
 
-func (helper *CryptoHelper) waitLongerForSession(ctx context.Context, log zerolog.Logger, evt *event.Event) {
+func (helper *CryptoHelper) waitForSession(ctx context.Context, evt *event.Event) {
+	log := zerolog.Ctx(ctx)
+	content := evt.Content.AsEncrypted()
+
+	log.Debug().
+		Int("wait_seconds", int(initialSessionWaitTimeout.Seconds())).
+		Msg("Couldn't find session, waiting for keys to arrive...")
+	if helper.mach.WaitForSession(ctx, evt.RoomID, content.SenderKey, content.SessionID, initialSessionWaitTimeout) {
+		log.Debug().Msg("Got keys after waiting, trying to decrypt event again")
+		decrypted, err := helper.Decrypt(ctx, evt)
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to decrypt event")
+			helper.DecryptErrorCallback(evt, err)
+		} else {
+			helper.postDecrypt(ctx, decrypted)
+		}
+	} else {
+		go helper.waitLongerForSession(ctx, evt)
+	}
+}
+
+func (helper *CryptoHelper) waitLongerForSession(ctx context.Context, evt *event.Event) {
+	log := zerolog.Ctx(ctx)
 	content := evt.Content.AsEncrypted()
 	log.Debug().Int("wait_seconds", int(extendedSessionWaitTimeout.Seconds())).Msg("Couldn't find session, requesting keys and waiting longer...")
 

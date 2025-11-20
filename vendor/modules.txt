@@ -17,13 +17,13 @@ github.com/mattn/go-colorable
 # github.com/mattn/go-isatty v0.0.20
 ## explicit; go 1.15
 github.com/mattn/go-isatty
-# github.com/mattn/go-sqlite3 v1.14.28
+# github.com/mattn/go-sqlite3 v1.14.32
 ## explicit; go 1.19
 github.com/mattn/go-sqlite3
-# github.com/ncruces/go-strftime v0.1.9
+# github.com/ncruces/go-strftime v1.0.0
 ## explicit; go 1.17
 github.com/ncruces/go-strftime
-# github.com/petermattis/goid v0.0.0-20250319124200-ccd6737f222a
+# github.com/petermattis/goid v0.0.0-20251120131758-5ee294b6ad81
 ## explicit; go 1.17
 github.com/petermattis/goid
 # github.com/pkg/errors v0.9.1
@@ -44,7 +44,7 @@ github.com/sirupsen/logrus
 # github.com/tidwall/gjson v1.18.0
 ## explicit; go 1.12
 github.com/tidwall/gjson
-# github.com/tidwall/match v1.1.1
+# github.com/tidwall/match v1.2.0
 ## explicit; go 1.15
 github.com/tidwall/match
 # github.com/tidwall/pretty v1.2.1
@@ -53,8 +53,8 @@ github.com/tidwall/pretty
 # github.com/tidwall/sjson v1.2.5
 ## explicit; go 1.14
 github.com/tidwall/sjson
-# go.mau.fi/util v0.8.6
-## explicit; go 1.23.0
+# go.mau.fi/util v0.9.3
+## explicit; go 1.24.0
 go.mau.fi/util/base58
 go.mau.fi/util/confusable
 go.mau.fi/util/dbutil
@@ -63,6 +63,7 @@ go.mau.fi/util/exbytes
 go.mau.fi/util/exerrors
 go.mau.fi/util/exgjson
 go.mau.fi/util/exhttp
+go.mau.fi/util/exmaps
 go.mau.fi/util/exslices
 go.mau.fi/util/exsync
 go.mau.fi/util/exzerolog
@@ -72,25 +73,34 @@ go.mau.fi/util/jsontime
 go.mau.fi/util/ptr
 go.mau.fi/util/random
 go.mau.fi/util/retryafter
-# golang.org/x/crypto v0.38.0
-## explicit; go 1.23.0
+# golang.org/x/crypto v0.45.0
+## explicit; go 1.24.0
 golang.org/x/crypto/curve25519
 golang.org/x/crypto/hkdf
 golang.org/x/crypto/pbkdf2
-# golang.org/x/exp v0.0.0-20250506013437-ce4c2cf36ca6
-## explicit; go 1.23.0
+# golang.org/x/exp v0.0.0-20251113190631-e25ba8c21ef6
+## explicit; go 1.24.0
 golang.org/x/exp/constraints
 golang.org/x/exp/maps
-# golang.org/x/sys v0.33.0
-## explicit; go 1.23.0
+# golang.org/x/net v0.47.0
+## explicit; go 1.24.0
+golang.org/x/net/http/httpguts
+golang.org/x/net/http2
+golang.org/x/net/http2/hpack
+golang.org/x/net/idna
+golang.org/x/net/internal/httpcommon
+# golang.org/x/sys v0.38.0
+## explicit; go 1.24.0
 golang.org/x/sys/unix
 golang.org/x/sys/windows
-# golang.org/x/text v0.25.0
-## explicit; go 1.23.0
+# golang.org/x/text v0.31.0
+## explicit; go 1.24.0
+golang.org/x/text/secure/bidirule
 golang.org/x/text/transform
+golang.org/x/text/unicode/bidi
 golang.org/x/text/unicode/norm
-# maunium.net/go/mautrix v0.23.3
-## explicit; go 1.23.0
+# maunium.net/go/mautrix v0.26.0
+## explicit; go 1.24.0
 maunium.net/go/mautrix
 maunium.net/go/mautrix/crypto
 maunium.net/go/mautrix/crypto/aescbc
@@ -121,8 +131,8 @@ maunium.net/go/mautrix/event
 maunium.net/go/mautrix/id
 maunium.net/go/mautrix/pushrules
 maunium.net/go/mautrix/sqlstatestore
-# modernc.org/libc v1.65.2
-## explicit; go 1.23.0
+# modernc.org/libc v1.67.0
+## explicit; go 1.24.0
 modernc.org/libc
 modernc.org/libc/errno
 modernc.org/libc/fcntl
@@ -152,10 +162,10 @@ modernc.org/libc/wctype
 # modernc.org/mathutil v1.7.1
 ## explicit; go 1.21
 modernc.org/mathutil
-# modernc.org/memory v1.10.0
+# modernc.org/memory v1.11.0
 ## explicit; go 1.23.0
 modernc.org/memory
-# modernc.org/sqlite v1.37.0
-## explicit; go 1.23.0
+# modernc.org/sqlite v1.40.1
+## explicit; go 1.24.0
 modernc.org/sqlite
 modernc.org/sqlite/lib

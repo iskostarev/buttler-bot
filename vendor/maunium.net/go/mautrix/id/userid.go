@@ -30,10 +30,11 @@ func NewEncodedUserID(localpart, homeserver string) UserID {
 }
 
 var (
-	ErrInvalidUserID         = errors.New("is not a valid user ID")
-	ErrNoncompliantLocalpart = errors.New("contains characters that are not allowed")
-	ErrUserIDTooLong         = errors.New("the given user ID is longer than 255 characters")
-	ErrEmptyLocalpart        = errors.New("empty localparts are not allowed")
+	ErrInvalidUserID          = errors.New("is not a valid user ID")
+	ErrNoncompliantLocalpart  = errors.New("contains characters that are not allowed")
+	ErrUserIDTooLong          = errors.New("the given user ID is longer than 255 characters")
+	ErrEmptyLocalpart         = errors.New("empty localparts are not allowed")
+	ErrNoncompliantServerPart = errors.New("is not a valid server name")
 )
 
 // ParseCommonIdentifier parses a common identifier according to https://spec.matrix.org/v1.9/appendices/#common-identifier-format
@@ -103,21 +104,32 @@ func ValidateUserLocalpart(localpart string) error {
 	return nil
 }
 
-// ParseAndValidate parses the user ID into the localpart and server name like Parse,
-// and also validates that the localpart is allowed according to the user identifiers spec.
-func (userID UserID) ParseAndValidate() (localpart, homeserver string, err error) {
-	localpart, homeserver, err = userID.Parse()
+// ParseAndValidateStrict is a stricter version of ParseAndValidateRelaxed that checks the localpart to only allow non-historical localparts.
+// This should be used with care: there are real users still using historical localparts.
+func (userID UserID) ParseAndValidateStrict() (localpart, homeserver string, err error) {
+	localpart, homeserver, err = userID.ParseAndValidateRelaxed()
 	if err == nil {
 		err = ValidateUserLocalpart(localpart)
 	}
-	if err == nil && len(userID) > UserIDMaxLength {
+	return
+}
+
+// ParseAndValidateRelaxed parses the user ID into the localpart and server name like Parse,
+// and also validates that the user ID is not too long and that the server name is valid.
+func (userID UserID) ParseAndValidateRelaxed() (localpart, homeserver string, err error) {
+	if len(userID) > UserIDMaxLength {
 		err = ErrUserIDTooLong
+		return
+	}
+	localpart, homeserver, err = userID.Parse()
+	if err == nil && !ValidateServerName(homeserver) {
+		err = fmt.Errorf("%q %q", homeserver, ErrNoncompliantServerPart)
 	}
 	return
 }
 
 func (userID UserID) ParseAndDecode() (localpart, homeserver string, err error) {
-	localpart, homeserver, err = userID.ParseAndValidate()
+	localpart, homeserver, err = userID.ParseAndValidateStrict()
 	if err == nil {
 		localpart, err = DecodeUserLocalpart(localpart)
 	}
