@@ -140,7 +140,7 @@ func (session *Session) respondToTimezoneHints(ctx context.Context, logger logru
 		}
 	}
 
-	if session.SendMessage(ctx, logger, roomId, NewHtmlTextMessage(responseHtml, responsePlain)) != nil {
+	if session.SendMessage(ctx, logger, roomId, NewHtmlTextMessage(responseHtml, responsePlain)) == nil {
 		for _, curHint := range requiredHints {
 			session.updateTimezoneHintCooldown(roomId, curHint.time, curHint.tzid)
 		}
