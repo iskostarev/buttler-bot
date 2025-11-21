@@ -43,7 +43,7 @@ type MentionForwarderState struct {
 type Session struct {
 	Client                 *mautrix.Client
 	StartTimestamp         int64
-	MessageCounter         int64
+	MessageCounters        map[mxid.RoomID]int64
 	Timezones              []TimezoneInfo
 	MentionForwards        map[mxid.UserID]MentionForward
 	LastTzRequests         map[RequestedTimezoneHint]int64
@@ -144,6 +144,7 @@ func InitSession(ctx context.Context, config *Config) (session Session, err erro
 	}
 
 	session.StartTimestamp = time.Now().UnixMilli()
+	session.MessageCounters = make(map[mxid.RoomID]int64)
 
 	for _, tz := range config.Timezones {
 		regex, err := buildTimezoneRegexp(tz.Regex)
@@ -231,7 +232,7 @@ func (session *Session) FindDirectMessageRoom(ctx context.Context, logger logrus
 }
 
 func (session *Session) handleMessage(ctx context.Context, evt *mxevent.Event) {
-	session.MessageCounter++
+	session.MessageCounters[evt.RoomID]++
 
 	if evt.Sender == session.Client.UserID {
 		return
@@ -245,7 +246,7 @@ func (session *Session) handleMessage(ctx context.Context, evt *mxevent.Event) {
 		"event_id": evt.ID,
 		"room_id":  evt.RoomID,
 		"sender":   evt.Sender,
-		"msgno":    session.MessageCounter,
+		"msgno":    session.MessageCounters[evt.RoomID],
 	})
 
 	session.Respond(ctx, logger, evt.ID, evt.RoomID, evt.Content.AsMessage())

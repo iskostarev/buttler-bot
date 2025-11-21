@@ -70,12 +70,12 @@ func (session *Session) isTimezoneHintOnCooldown(roomId mxid.RoomID, time string
 		return false
 	}
 
-	return session.MessageCounter-lastMsgNo <= session.TimezoneHintCooldown
+	return session.MessageCounters[roomId]-lastMsgNo <= session.TimezoneHintCooldown
 }
 
 func (session *Session) updateTimezoneHintCooldown(roomId mxid.RoomID, time string, tzid string) {
 	key := RequestedTimezoneHint{RoomId: roomId, Time: time, TzId: tzid}
-	session.LastTzRequests[key] = session.MessageCounter
+	session.LastTzRequests[key] = session.MessageCounters[roomId]
 }
 
 func (session *Session) respondToTimezoneHints(ctx context.Context, logger logrus.FieldLogger, roomId mxid.RoomID, message string) {
