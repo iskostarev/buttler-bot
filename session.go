@@ -27,6 +27,11 @@ type RequestedTimezoneHint struct {
 	TzId   string
 }
 
+type TimezoneRequestTime struct {
+	MsgNo     int64
+	Timestamp time.Time
+}
+
 type MentionForward struct {
 	Regex *regexp.Regexp
 }
@@ -41,15 +46,16 @@ type MentionForwarderState struct {
 }
 
 type Session struct {
-	Client                 *mautrix.Client
-	StartTimestamp         int64
-	MessageCounters        map[mxid.RoomID]int64
-	Timezones              []TimezoneInfo
-	MentionForwards        map[mxid.UserID]MentionForward
-	LastTzRequests         map[RequestedTimezoneHint]int64
-	MentionForwardersState map[MentionForwarderStateKey]*MentionForwarderState
-	TimezoneHintCooldown   int64
-	MentionForwardCooldown time.Duration
+	Client                       *mautrix.Client
+	StartTimestamp               int64
+	MessageCounters              map[mxid.RoomID]int64
+	Timezones                    []TimezoneInfo
+	MentionForwards              map[mxid.UserID]MentionForward
+	LastTzRequests               map[RequestedTimezoneHint]TimezoneRequestTime
+	MentionForwardersState       map[MentionForwarderStateKey]*MentionForwarderState
+	TimezoneHintCooldownMsgs     int64
+	TimezoneHintCooldownDuration time.Duration
+	MentionForwardCooldown       time.Duration
 }
 
 type TimezoneInfo struct {
@@ -181,8 +187,12 @@ func InitSession(ctx context.Context, config *Config) (session Session, err erro
 		session.MentionForwards[userId] = MentionForward{Regex: regex}
 	}
 
-	session.LastTzRequests = make(map[RequestedTimezoneHint]int64)
-	session.TimezoneHintCooldown = config.TimezoneHintCooldown
+	session.LastTzRequests = make(map[RequestedTimezoneHint]TimezoneRequestTime)
+	session.TimezoneHintCooldownMsgs = config.TimezoneHintCooldown.MsgCount
+	session.TimezoneHintCooldownDuration, err = time.ParseDuration(config.TimezoneHintCooldown.Duration)
+	if err != nil {
+		return
+	}
 
 	session.MentionForwardCooldown, err = time.ParseDuration(config.MentionForwardCooldown)
 	if err != nil {

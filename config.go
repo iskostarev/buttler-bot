@@ -30,7 +30,10 @@ type Config struct {
 		Regex    string
 		Color    string
 	}
-	TimezoneHintCooldown int64
+	TimezoneHintCooldown struct {
+		MsgCount int64
+		Duration string
+	}
 
 	MentionForwards []struct {
 		UserId string

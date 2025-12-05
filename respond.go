@@ -63,19 +63,30 @@ func (session *Session) respondToPraise(ctx context.Context, logger logrus.Field
 	}
 }
 
-func (session *Session) isTimezoneHintOnCooldown(roomId mxid.RoomID, time string, tzid string) bool {
-	key := RequestedTimezoneHint{RoomId: roomId, Time: time, TzId: tzid}
-	lastMsgNo, ok := session.LastTzRequests[key]
+func (session *Session) isTimezoneHintOnCooldown(roomId mxid.RoomID, hintTime string, tzid string) bool {
+	key := RequestedTimezoneHint{RoomId: roomId, Time: hintTime, TzId: tzid}
+	lastTime, ok := session.LastTzRequests[key]
 	if !ok {
 		return false
 	}
 
-	return session.MessageCounters[roomId]-lastMsgNo <= session.TimezoneHintCooldown
+	if session.MessageCounters[roomId]-lastTime.MsgNo > session.TimezoneHintCooldownMsgs {
+		return false
+	}
+
+	if time.Now().After(lastTime.Timestamp.Add(session.TimezoneHintCooldownDuration)) {
+		return false
+	}
+
+	return true
 }
 
-func (session *Session) updateTimezoneHintCooldown(roomId mxid.RoomID, time string, tzid string) {
-	key := RequestedTimezoneHint{RoomId: roomId, Time: time, TzId: tzid}
-	session.LastTzRequests[key] = session.MessageCounters[roomId]
+func (session *Session) updateTimezoneHintCooldown(roomId mxid.RoomID, hintTime string, tzid string) {
+	key := RequestedTimezoneHint{RoomId: roomId, Time: hintTime, TzId: tzid}
+	session.LastTzRequests[key] = TimezoneRequestTime{
+		MsgNo:     session.MessageCounters[roomId],
+		Timestamp: time.Now(),
+	}
 }
 
 func (session *Session) respondToTimezoneHints(ctx context.Context, logger logrus.FieldLogger, roomId mxid.RoomID, message string) {
