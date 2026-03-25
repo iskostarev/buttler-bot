@@ -40,6 +40,9 @@ var TypeMap = map[Type]reflect.Type{
 	StateSpaceParent:       reflect.TypeOf(SpaceParentEventContent{}),
 	StateSpaceChild:        reflect.TypeOf(SpaceChildEventContent{}),
 
+	StateRoomPolicy:         reflect.TypeOf(RoomPolicyEventContent{}),
+	StateUnstableRoomPolicy: reflect.TypeOf(RoomPolicyEventContent{}),
+
 	StateLegacyPolicyRoom:     reflect.TypeOf(ModPolicyContent{}),
 	StateLegacyPolicyServer:   reflect.TypeOf(ModPolicyContent{}),
 	StateLegacyPolicyUser:     reflect.TypeOf(ModPolicyContent{}),
@@ -50,7 +53,6 @@ var TypeMap = map[Type]reflect.Type{
 	StateElementFunctionalMembers: reflect.TypeOf(ElementFunctionalMembersContent{}),
 	StateBeeperRoomFeatures:       reflect.TypeOf(RoomFeatures{}),
 	StateBeeperDisappearingTimer:  reflect.TypeOf(BeeperDisappearingTimer{}),
-	StateBotCommands:              reflect.TypeOf(BotCommandsEventContent{}),
 
 	EventMessage:   reflect.TypeOf(MessageEventContent{}),
 	EventSticker:   reflect.TypeOf(MessageEventContent{}),
@@ -61,9 +63,11 @@ var TypeMap = map[Type]reflect.Type{
 	EventUnstablePollStart:    reflect.TypeOf(PollStartEventContent{}),
 	EventUnstablePollResponse: reflect.TypeOf(PollResponseEventContent{}),
 
-	BeeperMessageStatus: reflect.TypeOf(BeeperMessageStatusEventContent{}),
-	BeeperTranscription: reflect.TypeOf(BeeperTranscriptionEventContent{}),
-	BeeperDeleteChat:    reflect.TypeOf(BeeperChatDeleteEventContent{}),
+	BeeperMessageStatus:        reflect.TypeOf(BeeperMessageStatusEventContent{}),
+	BeeperTranscription:        reflect.TypeOf(BeeperTranscriptionEventContent{}),
+	BeeperDeleteChat:           reflect.TypeOf(BeeperChatDeleteEventContent{}),
+	BeeperAcceptMessageRequest: reflect.TypeOf(BeeperAcceptMessageRequestEventContent{}),
+	BeeperSendState:            reflect.TypeOf(BeeperSendStateEventContent{}),
 
 	AccountDataRoomTags:        reflect.TypeOf(TagEventContent{}),
 	AccountDataDirectChats:     reflect.TypeOf(DirectChatsEventContent{}),
@@ -72,9 +76,11 @@ var TypeMap = map[Type]reflect.Type{
 	AccountDataMarkedUnread:    reflect.TypeOf(MarkedUnreadEventContent{}),
 	AccountDataBeeperMute:      reflect.TypeOf(BeeperMuteEventContent{}),
 
-	EphemeralEventTyping:   reflect.TypeOf(TypingEventContent{}),
-	EphemeralEventReceipt:  reflect.TypeOf(ReceiptEventContent{}),
-	EphemeralEventPresence: reflect.TypeOf(PresenceEventContent{}),
+	EphemeralEventTyping:         reflect.TypeOf(TypingEventContent{}),
+	EphemeralEventReceipt:        reflect.TypeOf(ReceiptEventContent{}),
+	EphemeralEventPresence:       reflect.TypeOf(PresenceEventContent{}),
+	EphemeralEventEncrypted:      reflect.TypeOf(EncryptedEventContent{}),
+	BeeperEphemeralEventAIStream: reflect.TypeOf(BeeperAIStreamEventContent{}),
 
 	InRoomVerificationReady:  reflect.TypeOf(VerificationReadyEventContent{}),
 	InRoomVerificationStart:  reflect.TypeOf(VerificationStartEventContent{}),

@@ -113,9 +113,9 @@ func (et *Type) GuessClass() TypeClass {
 		StatePinnedEvents.Type, StateTombstone.Type, StateEncryption.Type, StateBridge.Type, StateHalfShotBridge.Type,
 		StateSpaceParent.Type, StateSpaceChild.Type, StatePolicyRoom.Type, StatePolicyServer.Type, StatePolicyUser.Type,
 		StateElementFunctionalMembers.Type, StateBeeperRoomFeatures.Type, StateBeeperDisappearingTimer.Type,
-		StateBotCommands.Type:
+		StateMSC4391BotCommand.Type, StateRoomPolicy.Type, StateUnstableRoomPolicy.Type:
 		return StateEventType
-	case EphemeralEventReceipt.Type, EphemeralEventTyping.Type, EphemeralEventPresence.Type:
+	case EphemeralEventReceipt.Type, EphemeralEventTyping.Type, EphemeralEventPresence.Type, BeeperEphemeralEventAIStream.Type:
 		return EphemeralEventType
 	case AccountDataDirectChats.Type, AccountDataPushRules.Type, AccountDataRoomTags.Type,
 		AccountDataFullyRead.Type, AccountDataIgnoredUserList.Type, AccountDataMarkedUnread.Type,
@@ -128,7 +128,7 @@ func (et *Type) GuessClass() TypeClass {
 		InRoomVerificationKey.Type, InRoomVerificationMAC.Type, InRoomVerificationCancel.Type,
 		CallInvite.Type, CallCandidates.Type, CallAnswer.Type, CallReject.Type, CallSelectAnswer.Type,
 		CallNegotiate.Type, CallHangup.Type, BeeperMessageStatus.Type, EventUnstablePollStart.Type, EventUnstablePollResponse.Type,
-		EventUnstablePollEnd.Type, BeeperTranscription.Type, BeeperDeleteChat.Type:
+		EventUnstablePollEnd.Type, BeeperTranscription.Type, BeeperDeleteChat.Type, BeeperAcceptMessageRequest.Type:
 		return MessageEventType
 	case ToDeviceRoomKey.Type, ToDeviceRoomKeyRequest.Type, ToDeviceForwardedRoomKey.Type, ToDeviceRoomKeyWithheld.Type,
 		ToDeviceBeeperRoomKeyAck.Type:
@@ -195,6 +195,9 @@ var (
 	StateSpaceChild        = Type{"m.space.child", StateEventType}
 	StateSpaceParent       = Type{"m.space.parent", StateEventType}
 
+	StateRoomPolicy         = Type{"m.room.policy", StateEventType}
+	StateUnstableRoomPolicy = Type{"org.matrix.msc4284.policy", StateEventType}
+
 	StateLegacyPolicyRoom     = Type{"m.room.rule.room", StateEventType}
 	StateLegacyPolicyServer   = Type{"m.room.rule.server", StateEventType}
 	StateLegacyPolicyUser     = Type{"m.room.rule.user", StateEventType}
@@ -205,7 +208,7 @@ var (
 	StateElementFunctionalMembers = Type{"io.element.functional_members", StateEventType}
 	StateBeeperRoomFeatures       = Type{"com.beeper.room_features", StateEventType}
 	StateBeeperDisappearingTimer  = Type{"com.beeper.disappearing_timer", StateEventType}
-	StateBotCommands              = Type{"org.matrix.msc4332.commands", StateEventType}
+	StateMSC4391BotCommand        = Type{"org.matrix.msc4391.command_description", StateEventType}
 )
 
 // Message events
@@ -234,9 +237,11 @@ var (
 	CallNegotiate    = Type{"m.call.negotiate", MessageEventType}
 	CallHangup       = Type{"m.call.hangup", MessageEventType}
 
-	BeeperMessageStatus = Type{"com.beeper.message_send_status", MessageEventType}
-	BeeperTranscription = Type{"com.beeper.transcription", MessageEventType}
-	BeeperDeleteChat    = Type{"com.beeper.delete_chat", MessageEventType}
+	BeeperMessageStatus        = Type{"com.beeper.message_send_status", MessageEventType}
+	BeeperTranscription        = Type{"com.beeper.transcription", MessageEventType}
+	BeeperDeleteChat           = Type{"com.beeper.delete_chat", MessageEventType}
+	BeeperAcceptMessageRequest = Type{"com.beeper.accept_message_request", MessageEventType}
+	BeeperSendState            = Type{"com.beeper.send_state", MessageEventType}
 
 	EventUnstablePollStart    = Type{Type: "org.matrix.msc3381.poll.start", Class: MessageEventType}
 	EventUnstablePollResponse = Type{Type: "org.matrix.msc3381.poll.response", Class: MessageEventType}
@@ -245,9 +250,11 @@ var (
 
 // Ephemeral events
 var (
-	EphemeralEventReceipt  = Type{"m.receipt", EphemeralEventType}
-	EphemeralEventTyping   = Type{"m.typing", EphemeralEventType}
-	EphemeralEventPresence = Type{"m.presence", EphemeralEventType}
+	EphemeralEventReceipt        = Type{"m.receipt", EphemeralEventType}
+	EphemeralEventTyping         = Type{"m.typing", EphemeralEventType}
+	EphemeralEventPresence       = Type{"m.presence", EphemeralEventType}
+	EphemeralEventEncrypted      = Type{"m.room.encrypted", EphemeralEventType}
+	BeeperEphemeralEventAIStream = Type{"com.beeper.ai.stream_event", EphemeralEventType}
 )
 
 // Account data events

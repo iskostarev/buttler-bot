@@ -386,7 +386,14 @@ func (cli *Client) LogRequestDone(req *http.Request, resp *http.Response, err er
 		}
 	}
 	if body := req.Context().Value(LogBodyContextKey); body != nil {
-		evt.Interface("req_body", body)
+		switch typedLogBody := body.(type) {
+		case json.RawMessage:
+			evt.RawJSON("req_body", typedLogBody)
+		case string:
+			evt.Str("req_body", typedLogBody)
+		default:
+			panic(fmt.Errorf("invalid type for LogBodyContextKey: %T", body))
+		}
 	}
 	if errors.Is(err, context.Canceled) {
 		evt.Msg("Request canceled")
@@ -450,8 +457,10 @@ func (params *FullRequest) compileRequest(ctx context.Context) (*http.Request, e
 		}
 		if params.SensitiveContent && !logSensitiveContent {
 			logBody = "<sensitive content omitted>"
+		} else if len(jsonStr) > 32768 {
+			logBody = fmt.Sprintf("<large content omitted (%d bytes)>", len(jsonStr))
 		} else {
-			logBody = params.RequestJSON
+			logBody = json.RawMessage(jsonStr)
 		}
 		reqBody = bytes.NewReader(jsonStr)
 		reqLen = int64(len(jsonStr))
@@ -476,7 +485,7 @@ func (params *FullRequest) compileRequest(ctx context.Context) (*http.Request, e
 		}
 	} else if params.Method != http.MethodGet && params.Method != http.MethodHead {
 		params.RequestJSON = struct{}{}
-		logBody = params.RequestJSON
+		logBody = json.RawMessage("{}")
 		reqBody = bytes.NewReader([]byte("{}"))
 		reqLen = 2
 	}
@@ -614,7 +623,9 @@ func (cli *Client) doRetry(
 	select {
 	case <-time.After(backoff):
 	case <-req.Context().Done():
-		return nil, nil, req.Context().Err()
+		if !errors.Is(context.Cause(req.Context()), ErrContextCancelRetry) {
+			return nil, nil, req.Context().Err()
+		}
 	}
 	if cli.UpdateRequestOnRetry != nil {
 		req = cli.UpdateRequestOnRetry(req, cause)
@@ -740,12 +751,15 @@ func (cli *Client) executeCompiledRequest(
 	cli.RequestStart(req)
 	startTime := time.Now()
 	res, err := client.Do(req)
-	duration := time.Now().Sub(startTime)
+	duration := time.Since(startTime)
 	if res != nil && !dontReadResponse {
 		defer res.Body.Close()
 	}
 	if err != nil {
-		if retries > 0 && !errors.Is(err, context.Canceled) {
+		// Either error is *not* canceled or the underlying cause of cancelation explicitly asks to retry
+		canRetry := !errors.Is(err, context.Canceled) ||
+			errors.Is(context.Cause(req.Context()), ErrContextCancelRetry)
+		if retries > 0 && canRetry {
 			return cli.doRetry(
 				req, err, retries, backoff, responseJSON, handler, dontReadResponse, sizeLimit, client,
 			)
@@ -857,7 +871,7 @@ func (cli *Client) FullSyncRequest(ctx context.Context, req ReqSync) (resp *Resp
 	}
 	start := time.Now()
 	_, err = cli.MakeFullRequest(ctx, fullReq)
-	duration := time.Now().Sub(start)
+	duration := time.Since(start)
 	timeout := time.Duration(req.Timeout) * time.Millisecond
 	buffer := 10 * time.Second
 	if req.Since == "" {
@@ -904,7 +918,7 @@ func (cli *Client) RegisterAvailable(ctx context.Context, username string) (resp
 	return
 }
 
-func (cli *Client) register(ctx context.Context, url string, req *ReqRegister) (resp *RespRegister, uiaResp *RespUserInteractive, err error) {
+func (cli *Client) register(ctx context.Context, url string, req *ReqRegister[any]) (resp *RespRegister, uiaResp *RespUserInteractive, err error) {
 	var bodyBytes []byte
 	bodyBytes, err = cli.MakeFullRequest(ctx, FullRequest{
 		Method:           http.MethodPost,
@@ -928,7 +942,7 @@ func (cli *Client) register(ctx context.Context, url string, req *ReqRegister) (
 // Register makes an HTTP request according to https://spec.matrix.org/v1.2/client-server-api/#post_matrixclientv3register
 //
 // Registers with kind=user. For kind=guest, see RegisterGuest.
-func (cli *Client) Register(ctx context.Context, req *ReqRegister) (*RespRegister, *RespUserInteractive, error) {
+func (cli *Client) Register(ctx context.Context, req *ReqRegister[any]) (*RespRegister, *RespUserInteractive, error) {
 	u := cli.BuildClientURL("v3", "register")
 	return cli.register(ctx, u, req)
 }
@@ -937,7 +951,7 @@ func (cli *Client) Register(ctx context.Context, req *ReqRegister) (*RespRegiste
 // with kind=guest.
 //
 // For kind=user, see Register.
-func (cli *Client) RegisterGuest(ctx context.Context, req *ReqRegister) (*RespRegister, *RespUserInteractive, error) {
+func (cli *Client) RegisterGuest(ctx context.Context, req *ReqRegister[any]) (*RespRegister, *RespUserInteractive, error) {
 	query := map[string]string{
 		"kind": "guest",
 	}
@@ -960,8 +974,8 @@ func (cli *Client) RegisterGuest(ctx context.Context, req *ReqRegister) (*RespRe
 //		panic(err)
 //	}
 //	token := res.AccessToken
-func (cli *Client) RegisterDummy(ctx context.Context, req *ReqRegister) (*RespRegister, error) {
-	res, uia, err := cli.Register(ctx, req)
+func (cli *Client) RegisterDummy(ctx context.Context, req *ReqRegister[any]) (*RespRegister, error) {
+	_, uia, err := cli.Register(ctx, req)
 	if err != nil && uia == nil {
 		return nil, err
 	} else if uia == nil {
@@ -970,7 +984,7 @@ func (cli *Client) RegisterDummy(ctx context.Context, req *ReqRegister) (*RespRe
 		return nil, errors.New("server does not support m.login.dummy")
 	}
 	req.Auth = BaseAuthData{Type: AuthTypeDummy, Session: uia.Session}
-	res, _, err = cli.Register(ctx, req)
+	res, _, err := cli.Register(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -1144,7 +1158,9 @@ func (cli *Client) SearchUserDirectory(ctx context.Context, query string, limit 
 }
 
 func (cli *Client) GetMutualRooms(ctx context.Context, otherUserID id.UserID, extras ...ReqMutualRooms) (resp *RespMutualRooms, err error) {
-	if cli.SpecVersions != nil && !cli.SpecVersions.Supports(FeatureMutualRooms) {
+	supportsStable := cli.SpecVersions.Supports(FeatureStableMutualRooms)
+	supportsUnstable := cli.SpecVersions.Supports(FeatureUnstableMutualRooms)
+	if cli.SpecVersions != nil && !supportsUnstable && !supportsStable {
 		err = fmt.Errorf("server does not support fetching mutual rooms")
 		return
 	}
@@ -1154,7 +1170,10 @@ func (cli *Client) GetMutualRooms(ctx context.Context, otherUserID id.UserID, ex
 	if len(extras) > 0 {
 		query["from"] = extras[0].From
 	}
-	urlPath := cli.BuildURLWithQuery(ClientURLPath{"unstable", "uk.half-shot.msc2666", "user", "mutual_rooms"}, query)
+	urlPath := cli.BuildURLWithQuery(ClientURLPath{"v1", "mutual_rooms"}, query)
+	if !supportsStable && supportsUnstable {
+		urlPath = cli.BuildURLWithQuery(ClientURLPath{"unstable", "uk.half-shot.msc2666", "user", "mutual_rooms"}, query)
+	}
 	_, err = cli.MakeRequest(ctx, http.MethodGet, urlPath, nil, &resp)
 	return
 }
@@ -1319,6 +1338,9 @@ func (cli *Client) SendMessageEvent(ctx context.Context, roomID id.RoomID, event
 	if req.UnstableDelay > 0 {
 		queryParams["org.matrix.msc4140.delay"] = strconv.FormatInt(req.UnstableDelay.Milliseconds(), 10)
 	}
+	if req.UnstableStickyDuration > 0 {
+		queryParams["org.matrix.msc4354.sticky_duration_ms"] = strconv.FormatInt(req.UnstableStickyDuration.Milliseconds(), 10)
+	}
 
 	if !req.DontEncrypt && cli != nil && cli.Crypto != nil && eventType != event.EventReaction && eventType != event.EventEncrypted {
 		var isEncrypted bool
@@ -1342,6 +1364,48 @@ func (cli *Client) SendMessageEvent(ctx context.Context, roomID id.RoomID, event
 	return
 }
 
+// BeeperSendEphemeralEvent sends an ephemeral event into a room using Beeper's unstable endpoint.
+// contentJSON should be a value that can be encoded as JSON using json.Marshal.
+func (cli *Client) BeeperSendEphemeralEvent(ctx context.Context, roomID id.RoomID, eventType event.Type, contentJSON any, extra ...ReqSendEvent) (resp *RespSendEvent, err error) {
+	var req ReqSendEvent
+	if len(extra) > 0 {
+		req = extra[0]
+	}
+
+	var txnID string
+	if len(req.TransactionID) > 0 {
+		txnID = req.TransactionID
+	} else {
+		txnID = cli.TxnID()
+	}
+
+	queryParams := map[string]string{}
+	if req.Timestamp > 0 {
+		queryParams["ts"] = strconv.FormatInt(req.Timestamp, 10)
+	}
+
+	if !req.DontEncrypt && cli != nil && cli.Crypto != nil && eventType != event.EventEncrypted {
+		var isEncrypted bool
+		isEncrypted, err = cli.StateStore.IsEncrypted(ctx, roomID)
+		if err != nil {
+			err = fmt.Errorf("failed to check if room is encrypted: %w", err)
+			return
+		}
+		if isEncrypted {
+			if contentJSON, err = cli.Crypto.Encrypt(ctx, roomID, eventType, contentJSON); err != nil {
+				err = fmt.Errorf("failed to encrypt event: %w", err)
+				return
+			}
+			eventType = event.EventEncrypted
+		}
+	}
+
+	urlData := ClientURLPath{"unstable", "com.beeper.ephemeral", "rooms", roomID, "ephemeral", eventType.String(), txnID}
+	urlPath := cli.BuildURLWithQuery(urlData, queryParams)
+	_, err = cli.MakeRequest(ctx, http.MethodPut, urlPath, contentJSON, &resp)
+	return
+}
+
 // SendStateEvent sends a state event into a room. See https://spec.matrix.org/v1.16/client-server-api/#put_matrixclientv3roomsroomidstateeventtypestatekey
 // contentJSON should be a pointer to something that can be encoded as JSON using json.Marshal.
 func (cli *Client) SendStateEvent(ctx context.Context, roomID id.RoomID, eventType event.Type, stateKey string, contentJSON any, extra ...ReqSendEvent) (resp *RespSendEvent, err error) {
@@ -1359,6 +1423,9 @@ func (cli *Client) SendStateEvent(ctx context.Context, roomID id.RoomID, eventTy
 	}
 	if req.UnstableDelay > 0 {
 		queryParams["org.matrix.msc4140.delay"] = strconv.FormatInt(req.UnstableDelay.Milliseconds(), 10)
+	}
+	if req.UnstableStickyDuration > 0 {
+		queryParams["org.matrix.msc4354.sticky_duration_ms"] = strconv.FormatInt(req.UnstableStickyDuration.Milliseconds(), 10)
 	}
 	if req.Timestamp > 0 {
 		queryParams["ts"] = strconv.FormatInt(req.Timestamp, 10)
@@ -1746,6 +1813,8 @@ func parseRoomStateArray(req *http.Request, res *http.Response, responseJSON any
 	return nil, nil
 }
 
+type RoomStateMap = map[event.Type]map[string]*event.Event
+
 // State gets all state in a room.
 // See https://spec.matrix.org/v1.2/client-server-api/#get_matrixclientv3roomsroomidstate
 func (cli *Client) State(ctx context.Context, roomID id.RoomID) (stateMap RoomStateMap, err error) {
@@ -1828,6 +1897,9 @@ func (cli *Client) UploadLink(ctx context.Context, link string) (*RespMediaUploa
 }
 
 func (cli *Client) Download(ctx context.Context, mxcURL id.ContentURI) (*http.Response, error) {
+	if mxcURL.IsEmpty() {
+		return nil, fmt.Errorf("empty mxc uri provided to Download")
+	}
 	_, resp, err := cli.MakeFullRequestWithResp(ctx, FullRequest{
 		Method:           http.MethodGet,
 		URL:              cli.BuildClientURL("v1", "media", "download", mxcURL.Homeserver, mxcURL.FileID),
@@ -1842,6 +1914,9 @@ type DownloadThumbnailExtra struct {
 }
 
 func (cli *Client) DownloadThumbnail(ctx context.Context, mxcURL id.ContentURI, height, width int, extras ...DownloadThumbnailExtra) (*http.Response, error) {
+	if mxcURL.IsEmpty() {
+		return nil, fmt.Errorf("empty mxc uri provided to DownloadThumbnail")
+	}
 	if len(extras) > 1 {
 		panic(fmt.Errorf("invalid number of arguments to DownloadThumbnail: %d", len(extras)))
 	}
@@ -1914,10 +1989,15 @@ func (cli *Client) UploadAsync(ctx context.Context, req ReqUploadMedia) (*RespCr
 	}
 	req.MXC = resp.ContentURI
 	req.UnstableUploadURL = resp.UnstableUploadURL
+	if req.AsyncContext == nil {
+		req.AsyncContext = cli.cliOrContextLog(ctx).WithContext(context.Background())
+	}
 	go func() {
-		_, err = cli.UploadMedia(ctx, req)
+		_, err = cli.UploadMedia(req.AsyncContext, req)
 		if err != nil {
-			cli.Log.Error().Stringer("mxc", req.MXC).Err(err).Msg("Async upload of media failed")
+			zerolog.Ctx(req.AsyncContext).Err(err).
+				Stringer("mxc", req.MXC).
+				Msg("Async upload of media failed")
 		}
 	}()
 	return resp, nil
@@ -1953,6 +2033,7 @@ type ReqUploadMedia struct {
 	ContentType   string
 	FileName      string
 
+	AsyncContext context.Context
 	DoneCallback func()
 
 	// MXC specifies an existing MXC URI which doesn't have content yet to upload into.
@@ -1965,7 +2046,10 @@ type ReqUploadMedia struct {
 }
 
 func (cli *Client) tryUploadMediaToURL(ctx context.Context, url, contentType string, content io.Reader, contentLength int64) (*http.Response, error) {
-	cli.Log.Debug().Str("url", url).Msg("Uploading media to external URL")
+	cli.Log.Debug().
+		Str("url", url).
+		Int64("content_length", contentLength).
+		Msg("Uploading media to external URL")
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, content)
 	if err != nil {
 		return nil, err
@@ -2014,8 +2098,16 @@ func (cli *Client) uploadMediaToURL(ctx context.Context, data ReqUploadMedia) (*
 				Msg("Error uploading media to external URL, not retrying")
 			return nil, err
 		}
-		cli.Log.Warn().Str("url", data.UnstableUploadURL).Err(err).
+		backoff := time.Second * time.Duration(cli.DefaultHTTPRetries-retries)
+		cli.Log.Warn().Err(err).
+			Str("url", data.UnstableUploadURL).
+			Int("retry_in_seconds", int(backoff.Seconds())).
 			Msg("Error uploading media to external URL, retrying")
+		select {
+		case <-time.After(backoff):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 		retries--
 		_, err = readerSeeker.Seek(0, io.SeekStart)
 		if err != nil {
@@ -2595,13 +2687,13 @@ func (cli *Client) SetDeviceInfo(ctx context.Context, deviceID id.DeviceID, req 
 	return err
 }
 
-func (cli *Client) DeleteDevice(ctx context.Context, deviceID id.DeviceID, req *ReqDeleteDevice) error {
+func (cli *Client) DeleteDevice(ctx context.Context, deviceID id.DeviceID, req *ReqDeleteDevice[any]) error {
 	urlPath := cli.BuildClientURL("v3", "devices", deviceID)
 	_, err := cli.MakeRequest(ctx, http.MethodDelete, urlPath, req, nil)
 	return err
 }
 
-func (cli *Client) DeleteDevices(ctx context.Context, req *ReqDeleteDevices) error {
+func (cli *Client) DeleteDevices(ctx context.Context, req *ReqDeleteDevices[any]) error {
 	urlPath := cli.BuildClientURL("v3", "delete_devices")
 	_, err := cli.MakeRequest(ctx, http.MethodPost, urlPath, req, nil)
 	return err
@@ -2612,7 +2704,7 @@ type UIACallback = func(*RespUserInteractive) interface{}
 // UploadCrossSigningKeys uploads the given cross-signing keys to the server.
 // Because the endpoint requires user-interactive authentication a callback must be provided that,
 // given the UI auth parameters, produces the required result (or nil to end the flow).
-func (cli *Client) UploadCrossSigningKeys(ctx context.Context, keys *UploadCrossSigningKeysReq, uiaCallback UIACallback) error {
+func (cli *Client) UploadCrossSigningKeys(ctx context.Context, keys *UploadCrossSigningKeysReq[any], uiaCallback UIACallback) error {
 	content, err := cli.MakeFullRequest(ctx, FullRequest{
 		Method:           http.MethodPost,
 		URL:              cli.BuildClientURL("v3", "keys", "device_signing", "upload"),
@@ -2703,30 +2795,51 @@ func (cli *Client) AdminWhoIs(ctx context.Context, userID id.UserID) (resp RespW
 	return
 }
 
-// UnstableGetSuspendedStatus uses MSC4323 to check if a user is suspended.
-func (cli *Client) UnstableGetSuspendedStatus(ctx context.Context, userID id.UserID) (res *RespSuspended, err error) {
-	urlPath := cli.BuildClientURL("unstable", "uk.timedout.msc4323", "admin", "suspend", userID)
+func (cli *Client) makeMSC4323URL(action string, target id.UserID) string {
+	if cli.SpecVersions.Supports(FeatureUnstableAccountModeration) {
+		return cli.BuildClientURL("unstable", "uk.timedout.msc4323", "admin", action, target)
+	} else if cli.SpecVersions.Supports(FeatureStableAccountModeration) {
+		return cli.BuildClientURL("v1", "admin", action, target)
+	}
+	return ""
+}
+
+// GetSuspendedStatus uses MSC4323 to check if a user is suspended.
+func (cli *Client) GetSuspendedStatus(ctx context.Context, userID id.UserID) (res *RespSuspended, err error) {
+	urlPath := cli.makeMSC4323URL("suspend", userID)
+	if urlPath == "" {
+		return nil, MUnrecognized.WithMessage("Homeserver does not advertise MSC4323 support")
+	}
 	_, err = cli.MakeRequest(ctx, http.MethodGet, urlPath, nil, res)
 	return
 }
 
-// UnstableGetLockStatus uses MSC4323 to check if a user is locked.
-func (cli *Client) UnstableGetLockStatus(ctx context.Context, userID id.UserID) (res *RespLocked, err error) {
-	urlPath := cli.BuildClientURL("unstable", "uk.timedout.msc4323", "admin", "lock", userID)
+// GetLockStatus uses MSC4323 to check if a user is locked.
+func (cli *Client) GetLockStatus(ctx context.Context, userID id.UserID) (res *RespLocked, err error) {
+	urlPath := cli.makeMSC4323URL("lock", userID)
+	if urlPath == "" {
+		return nil, MUnrecognized.WithMessage("Homeserver does not advertise MSC4323 support")
+	}
 	_, err = cli.MakeRequest(ctx, http.MethodGet, urlPath, nil, res)
 	return
 }
 
-// UnstableSetSuspendedStatus uses MSC4323 to set whether a user account is suspended.
-func (cli *Client) UnstableSetSuspendedStatus(ctx context.Context, userID id.UserID, suspended bool) (res *RespSuspended, err error) {
-	urlPath := cli.BuildClientURL("unstable", "uk.timedout.msc4323", "admin", "suspend", userID)
+// SetSuspendedStatus uses MSC4323 to set whether a user account is suspended.
+func (cli *Client) SetSuspendedStatus(ctx context.Context, userID id.UserID, suspended bool) (res *RespSuspended, err error) {
+	urlPath := cli.makeMSC4323URL("suspend", userID)
+	if urlPath == "" {
+		return nil, MUnrecognized.WithMessage("Homeserver does not advertise MSC4323 support")
+	}
 	_, err = cli.MakeRequest(ctx, http.MethodPut, urlPath, &ReqSuspend{Suspended: suspended}, res)
 	return
 }
 
-// UnstableSetLockStatus uses MSC4323 to set whether a user account is locked.
-func (cli *Client) UnstableSetLockStatus(ctx context.Context, userID id.UserID, locked bool) (res *RespLocked, err error) {
-	urlPath := cli.BuildClientURL("unstable", "uk.timedout.msc4323", "admin", "lock", userID)
+// SetLockStatus uses MSC4323 to set whether a user account is locked.
+func (cli *Client) SetLockStatus(ctx context.Context, userID id.UserID, locked bool) (res *RespLocked, err error) {
+	urlPath := cli.makeMSC4323URL("lock", userID)
+	if urlPath == "" {
+		return nil, MUnrecognized.WithMessage("Homeserver does not advertise MSC4323 support")
+	}
 	_, err = cli.MakeRequest(ctx, http.MethodPut, urlPath, &ReqLocked{Locked: locked}, res)
 	return
 }
