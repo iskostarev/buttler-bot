@@ -158,12 +158,16 @@ func (session *Session) respondToTimezoneHints(ctx context.Context, logger logru
 	}
 }
 
-func (session *Session) mentionsToForward(roomId mxid.RoomID, message *mxevent.MessageEventContent) (result []mxid.UserID) {
+func (session *Session) mentionsToForward(roomId mxid.RoomID, sender mxid.UserID, message *mxevent.MessageEventContent) (result []mxid.UserID) {
 	resultSet := mapset.NewThreadUnsafeSet[mxid.UserID]()
 	if message.Mentions != nil && message.Mentions.UserIDs != nil {
 		for _, userId := range message.Mentions.UserIDs {
+			if sender == userId {
+				continue
+			}
+
 			_, ok := session.MentionForwards[userId]
-			if ok {
+			if ok || message.Mentions.Room {
 				resultSet.Add(userId)
 			}
 		}
@@ -206,9 +210,9 @@ func (session *Session) forwardMention(ctx context.Context, logger logrus.FieldL
 	return session.SendMessage(ctx, logger, directRoomId, forwardedMessage)
 }
 
-func (session *Session) respondToMentions(ctx context.Context, logger logrus.FieldLogger, msgId mxid.EventID, roomId mxid.RoomID, message *mxevent.MessageEventContent) {
+func (session *Session) respondToMentions(ctx context.Context, logger logrus.FieldLogger, msgId mxid.EventID, roomId mxid.RoomID, sender mxid.UserID, message *mxevent.MessageEventContent) {
 	reports := []string{}
-	for _, userId := range session.mentionsToForward(roomId, message) {
+	for _, userId := range session.mentionsToForward(roomId, sender, message) {
 		err := session.forwardMention(ctx, logger, msgId, roomId, userId, message)
 		if err != nil {
 			logger.Warningf("Failed to forward mention for user %s from room %s: %v", userId, roomId, err)
@@ -225,7 +229,7 @@ func (session *Session) respondToMentions(ctx context.Context, logger logrus.Fie
 	}
 }
 
-func (session *Session) Respond(ctx context.Context, logger logrus.FieldLogger, msgId mxid.EventID, roomId mxid.RoomID, message *mxevent.MessageEventContent) {
+func (session *Session) Respond(ctx context.Context, logger logrus.FieldLogger, msgId mxid.EventID, roomId mxid.RoomID, sender mxid.UserID, message *mxevent.MessageEventContent) {
 	logger.Debugf("Message: %v", message.Body)
 
 	defer func() {
@@ -236,5 +240,5 @@ func (session *Session) Respond(ctx context.Context, logger logrus.FieldLogger, 
 	session.respondToPing(ctx, logger, roomId, message.Body)
 	session.respondToPraise(ctx, logger, roomId, message.Body)
 	session.respondToTimezoneHints(ctx, logger, roomId, message.Body)
-	session.respondToMentions(ctx, logger, msgId, roomId, message)
+	session.respondToMentions(ctx, logger, msgId, roomId, sender, message)
 }

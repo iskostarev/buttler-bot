@@ -259,7 +259,7 @@ func (session *Session) handleMessage(ctx context.Context, evt *mxevent.Event) {
 		"msgno":    session.MessageCounters[evt.RoomID],
 	})
 
-	session.Respond(ctx, logger, evt.ID, evt.RoomID, evt.Content.AsMessage())
+	session.Respond(ctx, logger, evt.ID, evt.RoomID, evt.Sender, evt.Content.AsMessage())
 
 	if err := session.Client.MarkRead(ctx, evt.RoomID, evt.ID); err != nil {
 		logger.Errorf("Failed to mark as read: %s", err.Error())
