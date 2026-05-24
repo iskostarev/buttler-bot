@@ -15,7 +15,6 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -24,6 +23,7 @@ import (
 	"golang.org/x/crypto/hkdf"
 	"golang.org/x/exp/slices"
 
+	"maunium.net/go/mautrix/crypto"
 	"maunium.net/go/mautrix/crypto/canonicaljson"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
@@ -122,8 +122,10 @@ func (vh *VerificationHelper) ConfirmSAS(ctx context.Context, txnID id.Verificat
 	}
 
 	// Master signing key
-	crossSigningKeys := vh.mach.GetOwnCrossSigningPublicKeys(ctx)
-	if crossSigningKeys != nil {
+	crossSigningKeys, err := vh.mach.GetOwnCrossSigningPublicKeys(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get own cross-signing public keys: %w", err)
+	} else if crossSigningKeys != nil {
 		masterKey = crossSigningKeys.MasterKey.String()
 		crossSigningKeyID := id.NewKeyID(id.KeyAlgorithmEd25519, masterKey)
 		keys[crossSigningKeyID], err = vh.verificationMACHKDF(txn, vh.client.UserID, vh.client.DeviceID, txn.TheirUserID, txn.TheirDeviceID, crossSigningKeyID.String(), masterKey)
@@ -256,11 +258,11 @@ func calculateCommitment(ephemeralPubKey *ecdh.PublicKey, txn VerificationTransa
 	// hashing it, but we are just stuck on that.
 	commitmentHashInput := sha256.New()
 	commitmentHashInput.Write([]byte(base64.RawStdEncoding.EncodeToString(ephemeralPubKey.Bytes())))
-	encodedStartEvt, err := json.Marshal(txn.StartEventContent)
+	encodedStartEvt, err := canonicaljson.Marshal(txn.StartEventContent)
 	if err != nil {
 		return nil, err
 	}
-	commitmentHashInput.Write(canonicaljson.CanonicalJSONAssumeValid(encodedStartEvt))
+	commitmentHashInput.Write(encodedStartEvt)
 	return commitmentHashInput.Sum(nil), nil
 }
 
@@ -716,8 +718,16 @@ func (vh *VerificationHelper) onVerificationMAC(ctx context.Context, txn Verific
 			}
 			key = theirDevice.SigningKey.String()
 		} else { // This is the master key
-			crossSigningKeys := vh.mach.GetOwnCrossSigningPublicKeys(ctx)
+			var crossSigningKeys *crypto.CrossSigningPublicKeysCache
+			if txn.TheirUserID == vh.client.UserID {
+				crossSigningKeys, err = vh.mach.GetOwnCrossSigningPublicKeys(ctx)
+			} else {
+				crossSigningKeys, err = vh.mach.GetCrossSigningPublicKeys(ctx, txn.TheirUserID)
+			}
 			if crossSigningKeys == nil {
+				if err != nil {
+					log.Err(err).Msg("Failed to get cross-signing public keys")
+				}
 				vh.cancelVerificationTxn(ctx, txn, event.VerificationCancelCodeUser, "cross-signing keys not found")
 				return
 			}
