@@ -89,7 +89,7 @@ go.mongodb.org/mongo-driver/x/bsonx/bsoncore
 golang.org/x/crypto/curve25519
 golang.org/x/crypto/hkdf
 golang.org/x/crypto/pbkdf2
-# golang.org/x/exp v0.0.0-20260508232706-74f9aab9d74a
+# golang.org/x/exp v0.0.0-20260527015227-08cc5374adb3
 ## explicit; go 1.25.0
 golang.org/x/exp/constraints
 golang.org/x/exp/maps
@@ -146,7 +146,7 @@ maunium.net/go/mautrix/event
 maunium.net/go/mautrix/id
 maunium.net/go/mautrix/pushrules
 maunium.net/go/mautrix/sqlstatestore
-# modernc.org/libc v1.72.4
+# modernc.org/libc v1.72.5
 ## explicit; go 1.25.0
 modernc.org/libc
 modernc.org/libc/errno
@@ -180,7 +180,7 @@ modernc.org/mathutil
 # modernc.org/memory v1.11.0
 ## explicit; go 1.23.0
 modernc.org/memory
-# modernc.org/sqlite v1.50.1
+# modernc.org/sqlite v1.51.0
 ## explicit; go 1.25.0
 modernc.org/sqlite
 modernc.org/sqlite/lib
