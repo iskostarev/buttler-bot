@@ -18,7 +18,6 @@ import (
 	"maunium.net/go/mautrix/crypto/cryptohelper"
 	"maunium.net/go/mautrix/crypto/verificationhelper"
 	mxevent "maunium.net/go/mautrix/event"
-	"maunium.net/go/mautrix/id"
 	mxid "maunium.net/go/mautrix/id"
 )
 
@@ -242,7 +241,7 @@ func (session *Session) FindDirectMessageRoom(ctx context.Context, logger logrus
 	return
 }
 
-func (session *Session) GetRoomMembers(ctx context.Context, roomId id.RoomID) ([]mxid.UserID, error) {
+func (session *Session) GetRoomMembers(ctx context.Context, roomId mxid.RoomID) ([]mxid.UserID, error) {
 	var result []mxid.UserID
 
 	fetched, err := session.Client.StateStore.HasFetchedMembers(ctx, roomId)
