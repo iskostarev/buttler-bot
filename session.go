@@ -18,6 +18,7 @@ import (
 	"maunium.net/go/mautrix/crypto/cryptohelper"
 	"maunium.net/go/mautrix/crypto/verificationhelper"
 	mxevent "maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/id"
 	mxid "maunium.net/go/mautrix/id"
 )
 
@@ -239,6 +240,40 @@ func (session *Session) FindDirectMessageRoom(ctx context.Context, logger logrus
 
 	roomId = directRooms[0]
 	return
+}
+
+func (session *Session) GetRoomMembers(ctx context.Context, roomId id.RoomID) ([]mxid.UserID, error) {
+	var result []mxid.UserID
+
+	fetched, err := session.Client.StateStore.HasFetchedMembers(ctx, roomId)
+	if err != nil {
+		return nil, err
+	}
+
+	if fetched {
+		members, err := session.Client.StateStore.GetAllMembers(ctx, roomId)
+		if err != nil {
+			return nil, err
+		}
+		for member, membEvent := range members {
+			if membEvent.Membership == mxevent.MembershipJoin {
+				result = append(result, member)
+			}
+		}
+	} else {
+		members, err := session.Client.Members(ctx, roomId)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, evt := range members.Chunk {
+			if evt.Content.AsMember().Membership == mxevent.MembershipJoin {
+				result = append(result, mxid.UserID(evt.GetStateKey()))
+			}
+		}
+	}
+
+	return result, nil
 }
 
 func (session *Session) handleMessage(ctx context.Context, evt *mxevent.Event) {

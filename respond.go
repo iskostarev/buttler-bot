@@ -158,28 +158,38 @@ func (session *Session) respondToTimezoneHints(ctx context.Context, logger logru
 	}
 }
 
-func (session *Session) mentionsToForward(roomId mxid.RoomID, sender mxid.UserID, message *mxevent.MessageEventContent) (result []mxid.UserID) {
+func (session *Session) mentionsToForward(roomId mxid.RoomID, members []mxid.UserID, sender mxid.UserID, message *mxevent.MessageEventContent) (result []mxid.UserID) {
+	memberSet := mapset.NewThreadUnsafeSet[mxid.UserID](members...)
 	resultSet := mapset.NewThreadUnsafeSet[mxid.UserID]()
+
 	if message.Mentions != nil && message.Mentions.UserIDs != nil {
 		for _, userId := range message.Mentions.UserIDs {
-			if sender == userId {
-				continue
-			}
-
 			_, ok := session.MentionForwards[userId]
-			if ok || message.Mentions.Room {
+			if ok {
+				resultSet.Add(userId)
+			}
+		}
+	}
+
+	if message.Mentions != nil && message.Mentions.Room {
+		for userId, _ := range session.MentionForwards {
+			if memberSet.Contains(userId) {
 				resultSet.Add(userId)
 			}
 		}
 	}
 
 	for userId, mf := range session.MentionForwards {
-		if mf.Regex != nil && mf.Regex.MatchString(message.Body) {
+		if mf.Regex != nil && mf.Regex.MatchString(message.Body) && memberSet.Contains(userId) {
 			resultSet.Add(userId)
 		}
 	}
 
 	resultSet.Each(func(userId mxid.UserID) bool {
+		if userId == sender {
+			return false
+		}
+
 		state := session.GetMentionForwarderState(roomId, userId)
 		if time.Since(state.LastMentionTime) > session.MentionForwardCooldown {
 			result = append(result, userId)
@@ -212,7 +222,15 @@ func (session *Session) forwardMention(ctx context.Context, logger logrus.FieldL
 
 func (session *Session) respondToMentions(ctx context.Context, logger logrus.FieldLogger, msgId mxid.EventID, roomId mxid.RoomID, sender mxid.UserID, message *mxevent.MessageEventContent) {
 	reports := []string{}
-	for _, userId := range session.mentionsToForward(roomId, sender, message) {
+	members, err := session.GetRoomMembers(ctx, roomId)
+
+	if err != nil {
+		logger.Errorf("Failed to get member list of room %s: %v", roomId, err)
+		reports = append(reports, fmt.Sprintf("Failed to get member list: %v", err))
+	}
+
+	logger.Debugf("Member list of room %s: %v", roomId, members)
+	for _, userId := range session.mentionsToForward(roomId, members, sender, message) {
 		err := session.forwardMention(ctx, logger, msgId, roomId, userId, message)
 		if err != nil {
 			logger.Warningf("Failed to forward mention for user %s from room %s: %v", userId, roomId, err)
